@@ -28,11 +28,13 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="250">
+            <el-table-column label="操作" width="420">
               <template #default="scope">
                 <el-button type="primary" size="small" @click="editChild(scope.row)">编辑</el-button>
                 <el-button type="danger" size="small" @click="deleteChild(scope.row.id)">删除</el-button>
                 <el-button type="warning" size="small" @click="assignHabit(scope.row)">分配习惯</el-button>
+                <el-button type="info" size="small" @click="viewAssignedHabits(scope.row)">查看习惯</el-button>
+                <el-button type="success" size="small" @click="viewCheckinRecords(scope.row)">查看打卡记录</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -40,12 +42,22 @@
 
         <!-- 习惯管理 -->
         <el-tab-pane label="习惯管理" name="habits">
-          <el-button type="primary" @click="dialogVisible = true">添加习惯</el-button>
+          <el-button type="primary" @click="addHabit">添加习惯</el-button>
           <el-table :data="habits" style="width: 100%" class="habits-table">
             <el-table-column prop="id" label="ID" width="80" />
             <el-table-column prop="name" label="习惯名称" width="150" />
             <el-table-column prop="description" label="描述" />
             <el-table-column prop="reward_points" label="奖励积分" width="100" />
+            <el-table-column prop="schedule_type" label="打卡类型" width="100">
+              <template #default="scope">
+                {{ scope.row.schedule_type === 1 ? '每日' : '周期性' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="schedule_detail" label="周期选择" width="150">
+              <template #default="scope">
+                {{ formatScheduleDetail(scope.row.schedule_detail) }}
+              </template>
+            </el-table-column>
             <el-table-column prop="status" label="状态" width="100">
               <template #default="scope">
                 <el-tag :type="scope.row.status === 1 ? 'success' : 'danger'">
@@ -114,6 +126,43 @@
             </el-table-column>
           </el-table>
         </el-tab-pane>
+
+        <!-- 名言警句管理 -->
+        <el-tab-pane label="名言警句" name="quotes">
+          <div class="quotes-toolbar">
+            <el-button type="primary" @click="addQuote">添加名言</el-button>
+            <el-button type="success" @click="batchImportDialogVisible = true">批量导入</el-button>
+            <el-button type="danger" :disabled="selectedQuotes.length === 0" @click="batchDeleteQuotes">批量删除</el-button>
+          </div>
+          <el-table :data="quotes" style="width: 100%" class="quotes-table" @selection-change="handleQuoteSelectionChange">
+            <el-table-column type="selection" width="55" />
+            <el-table-column prop="id" label="ID" width="80" />
+            <el-table-column prop="content" label="内容" show-overflow-tooltip />
+            <el-table-column prop="meaning" label="意思" show-overflow-tooltip />
+            <el-table-column prop="author" label="作者" width="150" />
+            <el-table-column prop="create_time" label="创建时间" width="180">
+              <template #default="scope">
+                {{ formatDate(scope.row.create_time) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="200">
+              <template #default="scope">
+                <el-button type="primary" size="small" @click="editQuote(scope.row)">编辑</el-button>
+                <el-button type="danger" size="small" @click="deleteQuote(scope.row.id)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-pagination
+            v-model:current-page="quotePage"
+            v-model:page-size="quotePageSize"
+            :total="quoteTotal"
+            :page-sizes="[10, 20, 50, 100]"
+            layout="total, sizes, prev, pager, next"
+            @size-change="loadQuotes"
+            @current-change="loadQuotes"
+            class="pagination"
+          />
+        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -137,8 +186,8 @@
         </el-form-item>
         <el-form-item label="状态" prop="status">
           <el-radio-group v-model="childForm.status">
-            <el-radio label="1">正常</el-radio>
-            <el-radio label="0">禁用</el-radio>
+            <el-radio value="1">正常</el-radio>
+            <el-radio value="0">禁用</el-radio>
           </el-radio-group>
         </el-form-item>
       </el-form>
@@ -167,14 +216,31 @@
         </el-form-item>
         <el-form-item label="打卡类型" prop="schedule_type">
           <el-radio-group v-model="habitForm.schedule_type">
-            <el-radio label="1">每日</el-radio>
-            <el-radio label="2">周期性</el-radio>
+            <el-radio value="1">每日</el-radio>
+            <el-radio value="2">周期性</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="打卡开始时间" prop="checkin_time_start">
+        <el-form-item v-if="habitForm.schedule_type === '2'" label="周期选择" prop="schedule_detail">
+          <el-checkbox-group v-model="habitForm.schedule_detail">
+            <el-checkbox :label="1">周一</el-checkbox>
+            <el-checkbox :label="2">周二</el-checkbox>
+            <el-checkbox :label="3">周三</el-checkbox>
+            <el-checkbox :label="4">周四</el-checkbox>
+            <el-checkbox :label="5">周五</el-checkbox>
+            <el-checkbox :label="6">周六</el-checkbox>
+            <el-checkbox :label="0">周日</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+        <el-form-item v-if="habitForm.schedule_type === '2'" label="打卡开始时间" prop="checkin_time_start">
           <el-time-picker v-model="habitForm.checkin_time_start" format="HH:mm" value-format="HH:mm:ss" placeholder="选择开始时间" />
         </el-form-item>
-        <el-form-item label="打卡结束时间" prop="checkin_time_end">
+        <el-form-item v-if="habitForm.schedule_type === '2'" label="打卡结束时间" prop="checkin_time_end">
+          <el-time-picker v-model="habitForm.checkin_time_end" format="HH:mm" value-format="HH:mm:ss" placeholder="选择结束时间" />
+        </el-form-item>
+        <el-form-item v-if="habitForm.schedule_type === '1'" label="打卡开始时间" prop="checkin_time_start">
+          <el-time-picker v-model="habitForm.checkin_time_start" format="HH:mm" value-format="HH:mm:ss" placeholder="选择开始时间" />
+        </el-form-item>
+        <el-form-item v-if="habitForm.schedule_type === '1'" label="打卡结束时间" prop="checkin_time_end">
           <el-time-picker v-model="habitForm.checkin_time_end" format="HH:mm" value-format="HH:mm:ss" placeholder="选择结束时间" />
         </el-form-item>
         <el-form-item label="奖励积分" prop="reward_points">
@@ -182,14 +248,34 @@
         </el-form-item>
         <el-form-item label="允许补卡" prop="allow_makeup">
           <el-radio-group v-model="habitForm.allow_makeup">
-            <el-radio label="1">是</el-radio>
-            <el-radio label="0">否</el-radio>
+            <el-radio value="1">是</el-radio>
+            <el-radio value="0">否</el-radio>
           </el-radio-group>
+        </el-form-item>
+        <el-form-item label="需要拍照" prop="require_photo">
+          <el-radio-group v-model="habitForm.require_photo">
+            <el-radio value="1">是</el-radio>
+            <el-radio value="0">否</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="允许自我评分" prop="allow_self_rate">
+          <el-radio-group v-model="habitForm.allow_self_rate">
+            <el-radio value="1">是</el-radio>
+            <el-radio value="0">否</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="打卡提示" prop="checkin_prompt">
+          <el-input 
+            v-model="habitForm.checkin_prompt" 
+            type="textarea" 
+            :rows="2"
+            placeholder="打卡时显示给孩子的提示内容（可选）"
+          />
         </el-form-item>
         <el-form-item label="状态" prop="status">
           <el-radio-group v-model="habitForm.status">
-            <el-radio label="1">启用</el-radio>
-            <el-radio label="0">禁用</el-radio>
+            <el-radio value="1">启用</el-radio>
+            <el-radio value="0">禁用</el-radio>
           </el-radio-group>
         </el-form-item>
       </el-form>
@@ -221,8 +307,8 @@
         </el-form-item>
         <el-form-item label="状态" prop="status">
           <el-radio-group v-model="rewardForm.status">
-            <el-radio label="1">启用</el-radio>
-            <el-radio label="0">禁用</el-radio>
+            <el-radio value="1">启用</el-radio>
+            <el-radio value="0">禁用</el-radio>
           </el-radio-group>
         </el-form-item>
       </el-form>
@@ -239,10 +325,8 @@
       <el-form :model="statusForm" :rules="statusRules" ref="statusFormRef" label-width="100px">
         <el-form-item label="状态" prop="status">
           <el-select v-model="statusForm.status" placeholder="选择状态">
-            <el-option label="已完成" value="1" />
-            <el-option label="处理中" value="2" />
-            <el-option label="已发货" value="3" />
-            <el-option label="已收货" value="4" />
+            <el-option label="待审批" :value="2" />
+            <el-option label="审批通过" :value="1" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -255,17 +339,18 @@
     </el-dialog>
 
     <!-- 分配习惯对话框 -->
-    <el-dialog v-model="assignHabitDialogVisible" title="分配习惯">
+    <el-dialog v-model="assignHabitDialogVisible" title="分配习惯" width="600px">
       <el-form :model="assignHabitForm" :rules="assignHabitRules" ref="assignHabitFormRef" label-width="100px">
-        <el-form-item label="选择习惯" prop="habit_id">
-          <el-select v-model="assignHabitForm.habit_id" placeholder="选择习惯" style="width: 100%">
-            <el-option
-              v-for="habit in habits"
-              :key="habit.id"
-              :label="habit.name"
-              :value="habit.id"
-            />
-          </el-select>
+        <el-form-item label="选择习惯" prop="habit_ids">
+          <el-checkbox-group v-model="assignHabitForm.habit_ids">
+            <el-checkbox 
+              v-for="habit in habits" 
+              :key="habit.id" 
+              :label="habit.id"
+            >
+              {{ habit.name }}
+            </el-checkbox>
+          </el-checkbox-group>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -275,19 +360,181 @@
         </span>
       </template>
     </el-dialog>
+
+    <!-- 查看已分配习惯对话框 -->
+    <el-dialog v-model="viewHabitsDialogVisible" title="已分配习惯" width="800px">
+      <el-table :data="assignedHabits" style="width: 100%">
+        <el-table-column prop="habit.name" label="习惯名称" width="150" />
+        <el-table-column prop="habit.description" label="描述" />
+        <el-table-column prop="habit.reward_points" label="奖励积分" width="100" />
+        <el-table-column prop="assign_time" label="分配时间" width="180" />
+        <el-table-column label="操作" width="100">
+          <template #default="scope">
+            <el-button type="danger" size="small" @click="deleteAssignedHabit(scope.row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="viewHabitsDialogVisible = false">关闭</el-button>
+        </span>
+      </template>
+    </el-dialog>
+
+    <!-- 查看打卡记录对话框 -->
+    <el-dialog v-model="checkinRecordsDialogVisible" title="打卡记录" width="900px">
+      <el-table :data="childCheckinRecords" style="width: 100%">
+        <el-table-column prop="habit_name" label="习惯名称" width="150" />
+        <el-table-column prop="checkin_date" label="打卡日期" width="120">
+          <template #default="scope">
+            {{ dayjs(scope.row.checkin_date).format('YYYY-MM-DD') }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="checkin_time" label="打卡时间" width="150">
+          <template #default="scope">
+            {{ dayjs(scope.row.checkin_time).format('HH:mm:ss') }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="checkin_type" label="打卡类型" width="100">
+          <template #default="scope">
+            {{ scope.row.checkin_type === 1 ? '正常' : '补卡' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="照片" width="100">
+          <template #default="scope">
+            <el-image 
+              v-if="scope.row.photo_url" 
+              :src="scope.row.photo_url" 
+              :preview-src-list="[scope.row.photo_url]"
+              fit="cover"
+              style="width: 60px; height: 60px; cursor: pointer;"
+            >
+              <template #placeholder>
+                <div style="width: 60px; height: 60px; background: #f5f7fa; display: flex; align-items: center; justify-content: center;">
+                  <el-icon><Picture /></el-icon>
+                </div>
+              </template>
+            </el-image>
+            <span v-else style="color: #999;">无</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="self_rate" label="自我评分" width="100">
+          <template #default="scope">
+            <span v-if="scope.row.self_rate && scope.row.self_rate > 0" style="color: #FF9900;">
+              {{ '⭐'.repeat(scope.row.self_rate) }}
+            </span>
+            <span v-else style="color: #999;">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="points_rewarded" label="获得积分" width="100" />
+        <el-table-column prop="status" label="状态" width="100">
+          <template #default="scope">
+            <el-tag :type="scope.row.status === 1 ? 'success' : 'info'">
+              {{ scope.row.status === 1 ? '正常' : '已回退' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="120">
+          <template #default="scope">
+            <el-button 
+              type="danger" 
+              size="small" 
+              @click="rollbackCheckin(scope.row)"
+              :disabled="scope.row.status !== 1"
+            >
+              回退
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="checkinRecordsDialogVisible = false">关闭</el-button>
+        </span>
+      </template>
+    </el-dialog>
+
+    <!-- 名言警句编辑对话框 -->
+    <el-dialog v-model="quoteDialogVisible" :title="editingQuote ? '编辑名言' : '添加名言'" width="600px">
+      <el-form :model="quoteForm" :rules="quoteRules" ref="quoteFormRef" label-width="80px">
+        <el-form-item label="内容" prop="content">
+          <el-input type="textarea" :rows="4" v-model="quoteForm.content" placeholder="请输入名言内容" />
+        </el-form-item>
+        <el-form-item label="意思" prop="meaning">
+          <el-input type="textarea" :rows="3" v-model="quoteForm.meaning" placeholder="请输入名言的意思，通俗易懂的解释，方便小学生理解（可选）" />
+        </el-form-item>
+        <el-form-item label="作者" prop="author">
+          <el-input v-model="quoteForm.author" placeholder="请输入作者（可选）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="quoteDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="saveQuote">保存</el-button>
+        </span>
+      </template>
+    </el-dialog>
+
+    <!-- 批量导入对话框 -->
+    <el-dialog v-model="batchImportDialogVisible" title="批量导入名言" width="700px">
+      <el-form label-width="100px">
+        <el-form-item label="导入格式">
+          <p class="import-hint">每行一条名言，格式：内容|意思|作者（意思和作者可选）</p>
+          <p class="import-hint">示例：</p>
+          <p class="import-example">学而时习之，不亦说乎|学习后经常复习，不是很愉快吗？|孔子</p>
+          <p class="import-example">知识就是力量|知识能够帮助我们解决问题，是一种强大的力量|培根</p>
+          <p class="import-example">千里之行，始于足下|再长的路，都是从第一步开始的</p>
+        </el-form-item>
+        <el-form-item label="名言内容">
+          <el-input type="textarea" :rows="10" v-model="batchImportContent" placeholder="请输入要导入的名言，每行一条" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="batchImportDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="saveBatchImport">导入</el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../store/user'
 import api from '../api'
+import dayjs from 'dayjs'
+import { Picture } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const router = useRouter()
 
 const userStore = useUserStore()
 const activeTab = ref('children')
+
+// 格式化日期
+const formatDate = (date) => {
+  if (!date) return '-'
+  return dayjs(date).format('YYYY-MM-DD HH:mm:ss')
+}
+
+// 格式化周期选择
+const formatScheduleDetail = (detail) => {
+  if (!detail) return '-'
+  
+  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  const days = detail.split(',')
+  const formattedDays = days.map(day => {
+    const dayNum = parseInt(day)
+    if (dayNum >= 0 && dayNum <= 6) {
+      return weekdays[dayNum]
+    }
+    return day
+  })
+  
+  return formattedDays.join('、')
+}
 
 // 小孩相关
 const children = ref([])
@@ -317,14 +564,17 @@ const habitForm = ref({
   description: '',
   icon: '',
   category: '',
-  schedule_type: 1,
-  schedule_detail: '',
+  schedule_type: '1',
+  schedule_detail: [],
   checkin_time_start: '',
   checkin_time_end: '',
   reward_points: 0,
-  allow_makeup: 0,
+  allow_makeup: '0',
   makeup_days: 0,
-  status: 1
+  require_photo: '0',
+  allow_self_rate: '0',
+  checkin_prompt: '',
+  status: '1'
 })
 const habitRules = {
   name: [{ required: true, message: '请输入习惯名称', trigger: 'blur' }],
@@ -363,16 +613,232 @@ const statusRules = {
 }
 const statusFormRef = ref(null)
 
+// 查看已分配习惯相关
+const viewHabitsDialogVisible = ref(false)
+const assignedHabits = ref([])
+const currentChild = ref(null)
+
 // 分配习惯相关
 const assignHabitDialogVisible = ref(false)
-const currentChild = ref(null)
 const assignHabitForm = ref({
-  habit_id: null
+  habit_ids: []
 })
 const assignHabitRules = {
-  habit_id: [{ required: true, message: '请选择习惯', trigger: 'change' }]
+  habit_ids: [{ required: true, message: '请选择习惯', trigger: 'change', type: 'array', min: 1 }]
 }
 const assignHabitFormRef = ref(null)
+
+// 查看打卡记录相关
+const checkinRecordsDialogVisible = ref(false)
+const childCheckinRecords = ref([])
+
+// 名言警句相关
+const quotes = ref([])
+const quotePage = ref(1)
+const quotePageSize = ref(10)
+const quoteTotal = ref(0)
+const quoteDialogVisible = ref(false)
+const editingQuote = ref(null)
+const quoteForm = ref({
+  content: '',
+  author: ''
+})
+const quoteRules = {
+  content: [{ required: true, message: '请输入名言内容', trigger: 'blur' }]
+}
+const quoteFormRef = ref(null)
+const selectedQuotes = ref([])
+const batchImportDialogVisible = ref(false)
+const batchImportContent = ref('')
+
+// 加载名言警句列表
+const loadQuotes = async () => {
+  try {
+    const response = await api.get('/admin/quotes', {
+      params: {
+        page: quotePage.value,
+        page_size: quotePageSize.value
+      }
+    })
+    quotes.value = response.data.quotes
+    quoteTotal.value = response.data.total
+  } catch (error) {
+    console.error('Failed to load quotes:', error)
+    ElMessage.error('加载名言警句失败')
+  }
+}
+
+// 添加名言
+const addQuote = () => {
+  editingQuote.value = null
+  quoteForm.value = {
+    content: '',
+    meaning: '',
+    author: ''
+  }
+  quoteDialogVisible.value = true
+}
+
+// 编辑名言
+const editQuote = (quote) => {
+  editingQuote.value = quote
+  quoteForm.value = {
+    content: quote.content,
+    meaning: quote.meaning || '',
+    author: quote.author || ''
+  }
+  quoteDialogVisible.value = true
+}
+
+// 保存名言
+const saveQuote = async () => {
+  if (!quoteFormRef.value.validate()) return
+
+  try {
+    if (!editingQuote.value) {
+      // 添加名言需要二次确认
+      await ElMessageBox.confirm(
+        '确定要添加这条名言吗？',
+        '添加确认',
+        {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'info',
+        }
+      )
+    }
+
+    if (editingQuote.value) {
+      // 更新名言
+      await api.put(`/admin/quotes/${editingQuote.value.id}`, quoteForm.value)
+      ElMessage.success('更新成功')
+    } else {
+      // 添加名言
+      await api.post('/admin/quotes', quoteForm.value)
+      ElMessage.success('添加成功')
+    }
+    quoteDialogVisible.value = false
+    await loadQuotes()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('Failed to save quote:', error)
+      ElMessage.error('操作失败：' + (error.response?.data?.error || error.message))
+    }
+  }
+}
+
+// 删除名言
+const deleteQuote = async (id) => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除这条名言吗？此操作不可恢复。',
+      '删除确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+
+    await api.delete(`/admin/quotes/${id}`)
+    ElMessage.success('删除成功')
+    await loadQuotes()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('Failed to delete quote:', error)
+      ElMessage.error('删除失败：' + (error.response?.data?.error || error.message))
+    }
+  }
+}
+
+// 处理名言选择变化
+const handleQuoteSelectionChange = (selection) => {
+  selectedQuotes.value = selection
+}
+
+// 批量删除名言
+const batchDeleteQuotes = async () => {
+  if (selectedQuotes.value.length === 0) {
+    ElMessage.warning('请先选择要删除的名言')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedQuotes.value.length} 条名言吗？此操作不可恢复。`,
+      '批量删除确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+
+    const ids = selectedQuotes.value.map(q => q.id)
+    await api.delete('/admin/quotes/batch', { data: { ids } })
+    ElMessage.success('批量删除成功')
+    selectedQuotes.value = []
+    await loadQuotes()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('Failed to batch delete quotes:', error)
+      ElMessage.error('批量删除失败：' + (error.response?.data?.error || error.message))
+    }
+  }
+}
+
+// 批量导入名言
+const saveBatchImport = async () => {
+  if (!batchImportContent.value.trim()) {
+    ElMessage.warning('请输入要导入的名言内容')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      '确定要导入这些名言吗？',
+      '导入确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'info',
+      }
+    )
+
+    // 解析导入内容
+    const lines = batchImportContent.value.trim().split('\n')
+    const quotes = []
+
+    for (const line of lines) {
+      if (!line.trim()) continue
+
+      const parts = line.split('|')
+      const content = parts[0].trim()
+      const meaning = parts[1] ? parts[1].trim() : ''
+      const author = parts[2] ? parts[2].trim() : ''
+
+      if (content) {
+        quotes.push({ content, meaning, author })
+      }
+    }
+
+    if (quotes.length === 0) {
+      ElMessage.warning('没有有效的名言内容')
+      return
+    }
+
+    await api.post('/admin/quotes/batch', { quotes })
+    ElMessage.success(`成功导入 ${quotes.length} 条名言`)
+    batchImportDialogVisible.value = false
+    batchImportContent.value = ''
+    await loadQuotes()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('Failed to batch import quotes:', error)
+      ElMessage.error('批量导入失败：' + (error.response?.data?.error || error.message))
+    }
+  }
+}
 
 // 加载小孩列表
 const loadChildren = async () => {
@@ -389,6 +855,19 @@ const saveChild = async () => {
   if (!childFormRef.value.validate()) return
   
   try {
+    if (!editingChild.value) {
+      // 添加小孩需要二次确认
+      await ElMessageBox.confirm(
+        '确定要添加这个小孩吗？',
+        '添加确认',
+        {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'info',
+        }
+      )
+    }
+    
     // 如果 phone 和 email 为空，则不传递
     const formData = { ...childForm.value }
     if (!formData.phone) delete formData.phone
@@ -397,14 +876,19 @@ const saveChild = async () => {
     if (editingChild.value) {
       // 更新小孩
       await api.put(`/admin/children/${editingChild.value.id}`, formData)
+      ElMessage.success('更新成功')
     } else {
       // 添加小孩
       await api.post('/admin/children', formData)
+      ElMessage.success('添加成功')
     }
     childDialogVisible.value = false
     await loadChildren()
   } catch (error) {
-    console.error('Failed to save child:', error)
+    if (error !== 'cancel') {
+      console.error('Failed to save child:', error)
+      ElMessage.error('操作失败：' + (error.response?.data?.error || error.message))
+    }
   }
 }
 
@@ -418,10 +902,24 @@ const editChild = (child) => {
 // 删除小孩
 const deleteChild = async (id) => {
   try {
+    await ElMessageBox.confirm(
+      '确定要删除这个小孩吗？此操作不可恢复。',
+      '删除确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    
     await api.delete(`/admin/children/${id}`)
+    ElMessage.success('删除成功')
     await loadChildren()
   } catch (error) {
-    console.error('Failed to delete child:', error)
+    if (error !== 'cancel') {
+      console.error('Failed to delete child:', error)
+      ElMessage.error('删除失败：' + (error.response?.data?.error || error.message))
+    }
   }
 }
 
@@ -448,7 +946,7 @@ const loadRewards = async () => {
 // 加载兑换记录
 const loadExchangeRecords = async () => {
   try {
-    const response = await api.get('/exchange/records')
+    const response = await api.get('/admin/exchanges')
     exchangeRecords.value = response.data.records
   } catch (error) {
     console.error('Failed to load exchange records:', error)
@@ -460,47 +958,143 @@ const saveHabit = async () => {
   if (!habitFormRef.value.validate()) return
   
   try {
+    if (!editingHabit.value) {
+      // 添加习惯需要二次确认
+      await ElMessageBox.confirm(
+        '确定要添加这个习惯吗？',
+        '添加确认',
+        {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'info',
+        }
+      )
+    }
+    
     // 确保数值类型正确
     const formData = { ...habitForm.value }
     formData.schedule_type = parseInt(formData.schedule_type)
     formData.reward_points = parseInt(formData.reward_points)
     formData.allow_makeup = parseInt(formData.allow_makeup)
     formData.makeup_days = parseInt(formData.makeup_days)
+    formData.require_photo = parseInt(formData.require_photo)
+    formData.allow_self_rate = parseInt(formData.allow_self_rate)
     formData.status = parseInt(formData.status)
+    
+    // 调试日志
+    console.log('=== saveHabit Debug ===')
+    console.log('checkin_prompt:', formData.checkin_prompt)
+    console.log('formData:', formData)
+    console.log('======================')
+    
+    // 如果是周期性习惯，将数组转换为逗号分隔的字符串
+    if (formData.schedule_type === 2 && Array.isArray(formData.schedule_detail)) {
+      formData.schedule_detail = formData.schedule_detail.join(',')
+    } else {
+      // 每日习惯，schedule_detail 设为空字符串
+      formData.schedule_detail = ''
+    }
     
     if (editingHabit.value) {
       // 更新习惯
       await api.put(`/admin/habits/${editingHabit.value.id}`, formData)
+      ElMessage.success('更新成功')
     } else {
       // 添加习惯
       await api.post('/admin/habits', formData)
+      ElMessage.success('添加成功')
     }
     dialogVisible.value = false
     await loadHabits()
   } catch (error) {
-    console.error('Failed to save habit:', error)
+    if (error !== 'cancel') {
+      console.error('Failed to save habit:', error)
+      ElMessage.error('操作失败：' + (error.response?.data?.error || error.message))
+    }
   }
+}
+
+// 添加习惯
+const addHabit = () => {
+  editingHabit.value = null
+  habitForm.value = {
+    name: '',
+    description: '',
+    icon: '',
+    category: '',
+    schedule_type: '1',
+    schedule_detail: [],
+    checkin_time_start: '',
+    checkin_time_end: '',
+    reward_points: 0,
+    allow_makeup: '0',
+    makeup_days: 0,
+    require_photo: '0',
+    allow_self_rate: '0',
+    checkin_prompt: '',
+    status: '1'
+  }
+  dialogVisible.value = true
 }
 
 // 编辑习惯
 const editHabit = (habit) => {
   editingHabit.value = habit
+  
+  // 确保所有字段都有默认值
+  const requirePhoto = (habit.require_photo !== undefined && habit.require_photo !== null) ? habit.require_photo : 0
+  const allowSelfRate = (habit.allow_self_rate !== undefined && habit.allow_self_rate !== null) ? habit.allow_self_rate : 0
+  const allowMakeup = (habit.allow_makeup !== undefined && habit.allow_makeup !== null) ? habit.allow_makeup : 0
+  const status = (habit.status !== undefined && habit.status !== null) ? habit.status : 1
+  const scheduleType = habit.schedule_type || 1
+  
   habitForm.value = {
-    ...habit,
-    schedule_type: String(habit.schedule_type),
-    allow_makeup: String(habit.allow_makeup),
-    status: String(habit.status)
+    name: habit.name || '',
+    description: habit.description || '',
+    icon: habit.icon || '',
+    category: habit.category || '',
+    schedule_type: String(scheduleType),
+    schedule_detail: [],
+    checkin_time_start: habit.checkin_time_start || '',
+    checkin_time_end: habit.checkin_time_end || '',
+    reward_points: habit.reward_points || 0,
+    allow_makeup: String(allowMakeup),
+    makeup_days: habit.makeup_days || 0,
+    require_photo: String(requirePhoto),
+    allow_self_rate: String(allowSelfRate),
+    checkin_prompt: habit.checkin_prompt || '',
+    status: String(status)
   }
+  
+  // 如果是周期性习惯，将逗号分隔的字符串转换为数字数组
+  if (habit.schedule_type === 2 && habit.schedule_detail) {
+    habitForm.value.schedule_detail = habit.schedule_detail.split(',').map(item => parseInt(item.trim()))
+  }
+  
   dialogVisible.value = true
 }
 
 // 删除习惯
 const deleteHabit = async (id) => {
   try {
+    await ElMessageBox.confirm(
+      '确定要删除这个习惯吗？此操作不可恢复。',
+      '删除确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    
     await api.delete(`/admin/habits/${id}`)
+    ElMessage.success('删除成功')
     await loadHabits()
   } catch (error) {
-    console.error('Failed to delete habit:', error)
+    if (error !== 'cancel') {
+      console.error('Failed to delete habit:', error)
+      ElMessage.error('删除失败：' + (error.response?.data?.error || error.message))
+    }
   }
 }
 
@@ -509,6 +1103,19 @@ const saveReward = async () => {
   if (!rewardFormRef.value.validate()) return
   
   try {
+    if (!editingReward.value) {
+      // 添加奖励需要二次确认
+      await ElMessageBox.confirm(
+        '确定要添加这个奖励吗？',
+        '添加确认',
+        {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'info',
+        }
+      )
+    }
+    
     // 确保数值类型正确
     const formData = { ...rewardForm.value }
     formData.points_required = parseInt(formData.points_required)
@@ -522,14 +1129,19 @@ const saveReward = async () => {
     if (editingReward.value) {
       // 更新奖励
       await api.put(`/admin/rewards/${editingReward.value.id}`, formData)
+      ElMessage.success('更新成功')
     } else {
       // 添加奖励
       await api.post('/admin/rewards', formData)
+      ElMessage.success('添加成功')
     }
     rewardDialogVisible.value = false
     await loadRewards()
   } catch (error) {
-    console.error('Failed to save reward:', error)
+    if (error !== 'cancel') {
+      console.error('Failed to save reward:', error)
+      ElMessage.error('操作失败：' + (error.response?.data?.error || error.message))
+    }
   }
 }
 
@@ -543,10 +1155,24 @@ const editReward = (reward) => {
 // 删除奖励
 const deleteReward = async (id) => {
   try {
+    await ElMessageBox.confirm(
+      '确定要删除这个奖励吗？此操作不可恢复。',
+      '删除确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    
     await api.delete(`/admin/rewards/${id}`)
+    ElMessage.success('删除成功')
     await loadRewards()
   } catch (error) {
-    console.error('Failed to delete reward:', error)
+    if (error !== 'cancel') {
+      console.error('Failed to delete reward:', error)
+      ElMessage.error('删除失败：' + (error.response?.data?.error || error.message))
+    }
   }
 }
 
@@ -571,9 +1197,21 @@ const saveExchangeStatus = async () => {
 }
 
 // 分配习惯
-const assignHabit = (child) => {
+const assignHabit = async (child) => {
   currentChild.value = child
-  assignHabitForm.value = { habit_id: null }
+  
+  // 加载已分配的习惯
+  try {
+    const response = await api.get('/admin/assigned-habits', {
+      params: { child_id: child.id }
+    })
+    const assignedHabitIds = response.data.assignments.map(a => a.habit_id)
+    assignHabitForm.value = { habit_ids: assignedHabitIds }
+  } catch (error) {
+    console.error('Failed to load assigned habits:', error)
+    assignHabitForm.value = { habit_ids: [] }
+  }
+  
   assignHabitDialogVisible.value = true
 }
 
@@ -582,26 +1220,118 @@ const saveAssignHabit = async () => {
   if (!assignHabitFormRef.value.validate()) return
   
   try {
-    await api.post('/admin/habits/assign', {
-      habit_id: assignHabitForm.value.habit_id,
-      child_id: currentChild.value.id
+    // 调用批量分配接口
+    const habitIds = assignHabitForm.value.habit_ids
+    const childId = currentChild.value.id
+    
+    await api.post('/admin/habits/batch-assign', {
+      habit_ids: habitIds,
+      child_id: childId
     })
+    
     assignHabitDialogVisible.value = false
     // 显示成功提示
-    alert('习惯分配成功')
+    ElMessage.success('习惯分配成功')
   } catch (error) {
     console.error('Failed to assign habit:', error)
-    alert('习惯分配失败：' + (error.response?.data?.error || error.message))
+    ElMessage.error('习惯分配失败：' + (error.response?.data?.error || error.message))
+  }
+}
+
+// 查看已分配习惯
+const viewAssignedHabits = async (child) => {
+  currentChild.value = child
+  try {
+    const response = await api.get('/admin/assigned-habits', {
+      params: { child_id: child.id }
+    })
+    assignedHabits.value = response.data.assignments
+    viewHabitsDialogVisible.value = true
+  } catch (error) {
+    console.error('Failed to load assigned habits:', error)
+    alert('加载已分配习惯失败')
+  }
+}
+
+// 删除已分配习惯
+const deleteAssignedHabit = async (assignment) => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除这个已分配的习惯吗？',
+      '删除确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    
+    await api.delete(`/admin/habit-assignments/${assignment.id}`)
+    ElMessage.success('删除成功')
+    // 重新加载列表
+    await viewAssignedHabits(currentChild.value)
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('Failed to delete assigned habit:', error)
+      ElMessage.error('删除失败：' + (error.response?.data?.error || error.message))
+    }
+  }
+}
+
+// 查看打卡记录
+const viewCheckinRecords = async (child) => {
+  currentChild.value = child
+  try {
+    const startDate = dayjs().subtract(30, 'day').format('YYYY-MM-DD')
+    const endDate = dayjs().format('YYYY-MM-DD')
+    const response = await api.get('/admin/child/checkin-records', {
+      params: {
+        child_id: child.id,
+        start_date: startDate,
+        end_date: endDate
+      }
+    })
+    childCheckinRecords.value = response.data.records
+    checkinRecordsDialogVisible.value = true
+  } catch (error) {
+    console.error('Failed to load checkin records:', error)
+    ElMessage.error('加载打卡记录失败：' + (error.response?.data?.error || error.message))
+  }
+}
+
+// 回退打卡
+const rollbackCheckin = async (record) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要回退这次打卡吗？回退后将扣除 ${record.points_rewarded} 积分。`,
+      '回退打卡',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    
+    const response = await api.post('/admin/checkin/rollback', {
+      checkin_id: record.id,
+      reason: '管理员手动回退'
+    })
+    
+    ElMessage.success('回退成功')
+    // 重新加载列表
+    await viewCheckinRecords(currentChild.value)
+  } catch (error) {
+    if (error === 'cancel') return
+    console.error('Failed to rollback checkin:', error)
+    ElMessage.error('回退失败：' + (error.response?.data?.error || error.message))
   }
 }
 
 // 获取状态类型
 const getStatusType = (status) => {
   switch (status) {
-    case 1: return 'success'
-    case 2: return 'warning'
-    case 3: return 'info'
-    case 4: return 'success'
+    case 1: return 'success'  // 审批通过
+    case 2: return 'warning'  // 待审批
     default: return 'default'
   }
 }
@@ -609,10 +1339,8 @@ const getStatusType = (status) => {
 // 获取状态文本
 const getStatusText = (status) => {
   switch (status) {
-    case 1: return '已完成'
-    case 2: return '处理中'
-    case 3: return '已发货'
-    case 4: return '已收货'
+    case 1: return '审批通过'
+    case 2: return '待审批'
     default: return '未知'
   }
 }
@@ -628,6 +1356,7 @@ onMounted(async () => {
   await loadHabits()
   await loadRewards()
   await loadExchangeRecords()
+  await loadQuotes()
 })
 </script>
 
@@ -666,11 +1395,39 @@ onMounted(async () => {
 
 .habits-table,
 .rewards-table,
-.exchanges-table {
+.exchanges-table,
+.quotes-table {
   margin-top: 20px;
 }
 
 .dialog-footer {
   text-align: right;
+}
+
+.quotes-toolbar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.pagination {
+  margin-top: 20px;
+  text-align: right;
+}
+
+.import-hint {
+  margin: 5px 0;
+  color: #606266;
+  font-size: 14px;
+}
+
+.import-example {
+  margin: 3px 0;
+  color: #909399;
+  font-size: 13px;
+  font-family: monospace;
+  background-color: #f5f7fa;
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 </style>

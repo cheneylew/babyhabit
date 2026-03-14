@@ -14,8 +14,10 @@
           <el-input v-model="loginForm.password" type="password" placeholder="请输入密码" />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="login" :loading="isLoading">登录</el-button>
-          <el-button @click="$router.push('/register')">注册</el-button>
+          <div class="form-actions">
+            <el-button type="primary" @click="login" :loading="isLoading">登录</el-button>
+            <el-button @click="$router.push('/register')">注册</el-button>
+          </div>
         </el-form-item>
       </el-form>
     </el-card>
@@ -79,6 +81,22 @@ const login = async () => {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 }
 
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .login-card {
+    width: 90%;
+    max-width: 400px;
+  }
+  
+  .el-form {
+    padding: 0 15px;
+  }
+  
+  .el-button {
+    width: 90px;
+  }
+}
+
 .login-header {
   text-align: center;
   color: #333;
@@ -93,5 +111,12 @@ const login = async () => {
 .el-button {
   width: 100px;
   margin-right: 10px;
+  display: inline-block;
+}
+
+.form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
 }
 </style>

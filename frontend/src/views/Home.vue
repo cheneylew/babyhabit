@@ -37,8 +37,8 @@
           <el-button type="primary" size="small" @click="$router.push('/checkin')">去打卡</el-button>
         </div>
       </template>
-      <div v-if="habits.length > 0" class="habits-list">
-        <el-card v-for="habit in habits" :key="habit.id" class="habit-item" :class="{ 'checked-in': isCheckedIn(habit.id) }">
+      <div v-if="todayHabits.length > 0" class="habits-list">
+        <el-card v-for="habit in todayHabits" :key="habit.id" class="habit-item" :class="{ 'checked-in': isCheckedIn(habit.id) }">
           <div class="habit-info">
             <div class="habit-icon" :class="{ 'checked-in': isCheckedIn(habit.id) }">
               <img v-if="habit.icon" :src="habit.icon" alt="habit icon" />
@@ -48,7 +48,7 @@
               <h4 :class="{ 'checked-in': isCheckedIn(habit.id) }">{{ habit.name }}</h4>
               <p>{{ habit.description }}</p>
               <div class="habit-time">
-                <span>{{ habit.checkin_time_start }} - {{ habit.checkin_time_end }}</span>
+                <span>{{ habit.checkin_time_start.substring(0, 5) }} - {{ habit.checkin_time_end.substring(0, 5) }}</span>
                 <el-tag size="small" type="success">{{ habit.reward_points }} 积分</el-tag>
               </div>
             </div>
@@ -97,6 +97,57 @@ const todayCheckins = ref(0)
 const totalCheckins = ref(0)
 const currentStreak = ref(0)
 const totalPoints = ref(0)
+
+// 过滤出今天可打卡的习惯并排序（和打卡页保持一致）
+const todayHabits = computed(() => {
+  const today = dayjs()
+  
+  // 过滤出今天可打卡的习惯
+  const filteredHabits = habits.value.filter(habit => {
+    // 周期性习惯：检查是否在允许的星期内
+    if (habit.schedule_type === 2) {
+      if (!habit.schedule_detail || habit.schedule_detail.length === 0) {
+        return false
+      }
+      
+      // schedule_detail 可能是数组也可能是逗号分隔的字符串
+      let allowedDays = []
+      if (Array.isArray(habit.schedule_detail)) {
+        allowedDays = habit.schedule_detail
+      } else if (typeof habit.schedule_detail === 'string') {
+        allowedDays = habit.schedule_detail.split(',').map(d => parseInt(d))
+      }
+      
+      const todayWeekday = today.day() // 0-6, 0 表示周日
+      
+      if (!allowedDays.includes(todayWeekday)) {
+        return false
+      }
+    }
+    
+    return true
+  })
+  
+  // 排序：未打卡的排在前面，已打卡的排在后面
+  // 未打卡的按积分倒序排列
+  return filteredHabits.sort((a, b) => {
+    const aChecked = isCheckedIn(a.id)
+    const bChecked = isCheckedIn(b.id)
+    
+    // 如果一个已打卡一个未打卡，未打卡的排在前面
+    if (aChecked !== bChecked) {
+      return aChecked ? 1 : -1
+    }
+    
+    // 如果都未打卡，按积分倒序排列
+    if (!aChecked && !bChecked) {
+      return b.reward_points - a.reward_points
+    }
+    
+    // 如果都已打卡，保持原有顺序
+    return 0
+  })
+})
 
 const loadHabits = async () => {
   try {
@@ -172,41 +223,137 @@ onMounted(async () => {
 }
 
 .user-info-card {
-  margin-bottom: 20px;
+  margin-bottom: 15px;
+  padding: 12px;
 }
 
+/* 用户信息区域 */
 .user-info {
   display: flex;
   align-items: center;
-  padding: 20px;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.user-avatar {
+  flex-shrink: 0;
 }
 
 .user-details {
-  margin-left: 20px;
   flex: 1;
+  min-width: 0;
+}
+
+.user-details h3 {
+  margin: 0 0 5px 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.user-details p {
+  margin: 0 0 12px 0;
+  color: #666;
+}
+
+/* 积分区域 */
+.points-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.points-badge {
+  margin: 0;
+}
+
+.points-badge .el-button {
+  font-size: 14px;
+  padding: 6px 16px;
+}
+
+.points-section .el-button {
+  font-size: 14px;
+  padding: 6px 16px;
 }
 
 .user-actions {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-left: 20px;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
-.user-details h3 {
-  margin: 0 0 10px 0;
-  font-size: 20px;
+.user-actions .el-button {
+  font-size: 14px;
+  padding: 6px 16px;
 }
 
-.user-details p {
-  margin: 0 0 15px 0;
-  color: #666;
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .user-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  
+  .user-avatar {
+    align-self: center;
+  }
+  
+  .user-details {
+    width: 100%;
+    text-align: center;
+  }
+  
+  .points-section {
+    justify-content: center;
+    width: 100%;
+    gap: 8px;
+  }
+  
+  .user-actions {
+    width: 100%;
+    flex-direction: row;
+    justify-content: center;
+    gap: 8px;
+  }
+  
+  .user-actions .el-button {
+    flex: 1;
+    max-width: 120px;
+  }
 }
 
-.points-badge {
-  margin-top: 10px;
+@media (max-width: 480px) {
+  .user-details h3 {
+    font-size: 18px;
+  }
+  
+  .points-section {
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .points-section .el-button {
+    width: 100%;
+    max-width: 200px;
+  }
+  
+  .user-actions {
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .user-actions .el-button {
+    width: 100%;
+    max-width: 200px;
+  }
 }
 
+/* 习惯卡片区域 */
 .habits-card {
   margin-bottom: 20px;
 }
@@ -241,8 +388,14 @@ onMounted(async () => {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
+.habit-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+}
+
 .habit-icon {
-  margin-right: 15px;
+  flex-shrink: 0;
 }
 
 .habit-icon.checked-in {
@@ -266,10 +419,16 @@ onMounted(async () => {
   justify-content: center;
   font-size: 24px;
   font-weight: bold;
+  flex-shrink: 0;
 }
 
 .default-icon.checked-in {
   background: linear-gradient(135deg, #999 0%, #666 100%);
+}
+
+.habit-details {
+  flex: 1;
+  min-width: 0;
 }
 
 .habit-details h4 {
@@ -305,6 +464,7 @@ onMounted(async () => {
   text-align: center;
 }
 
+/* 统计信息区域 */
 .stats-card {
   margin-bottom: 20px;
 }

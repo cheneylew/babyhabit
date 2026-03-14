@@ -161,3 +161,28 @@ func GetChildrenByParentID(parentID int64) ([]*User, error) {
 	}
 	return children, nil
 }
+
+// GetAllChildren 获取所有小孩列表
+func GetAllChildren() ([]*User, error) {
+	query := `SELECT id, username, name, phone, email, avatar, user_type, status, points_balance, create_time 
+			 FROM user WHERE user_type = 2`
+	rows, err := config.DB.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	children := []*User{}
+	for rows.Next() {
+		child := &User{}
+		err := rows.Scan(
+			&child.ID, &child.Username, &child.Name, &child.Phone, &child.Email, &child.Avatar,
+			&child.UserType, &child.Status, &child.PointsBalance, &child.CreateTime,
+		)
+		if err != nil {
+			return nil, err
+		}
+		children = append(children, child)
+	}
+	return children, nil
+}

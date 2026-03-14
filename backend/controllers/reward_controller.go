@@ -170,12 +170,15 @@ func Exchange(c *gin.Context) {
 
 	// 创建兑换记录
 	record := &models.ExchangeRecord{
-		UserID:       user.ID,
-		ItemID:       req.ItemID,
-		Points:       item.PointsRequired * req.Quantity,
-		Quantity:     req.Quantity,
-		DeliveryInfo: req.DeliveryInfo,
-		Status:       2, // 处理中
+		UserID:   user.ID,
+		ItemID:   req.ItemID,
+		Points:   item.PointsRequired * req.Quantity,
+		Quantity: req.Quantity,
+		Status:   2, // 处理中
+	}
+	// 如果 DeliveryInfo 不为空，设置指针
+	if req.DeliveryInfo != "" {
+		record.DeliveryInfo = &req.DeliveryInfo
 	}
 
 	if err := models.CreateExchangeRecord(record); err != nil {
@@ -199,6 +202,17 @@ func GetExchangeRecords(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"records": records})
 }
 
+// GetAllExchangeRecords 获取所有兑换记录（管理员）
+func GetAllExchangeRecords(c *gin.Context) {
+	records, err := models.GetAllExchangeRecords()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"records": records})
+}
+
 // UpdateExchangeStatus 更新兑换状态
 func UpdateExchangeStatus(c *gin.Context) {
 	idStr := c.Param("id")
@@ -209,7 +223,7 @@ func UpdateExchangeStatus(c *gin.Context) {
 	}
 
 	var req struct {
-		Status int `json:"status" binding:"required,oneof=1 2 3 4"`
+		Status int `json:"status" binding:"required,oneof=1 2"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -223,4 +237,21 @@ func UpdateExchangeStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Exchange status updated successfully"})
+}
+
+// DeleteRewardItem 删除奖励物品
+func DeleteRewardItem(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item ID"})
+		return
+	}
+
+	if err := models.DeleteRewardItem(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Reward item deleted successfully"})
 }

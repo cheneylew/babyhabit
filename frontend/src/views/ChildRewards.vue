@@ -66,6 +66,19 @@
       </el-table>
     </el-card>
   </div>
+
+  <!-- 兑换确认对话框 -->
+  <el-dialog v-model="exchangeDialogVisible" title="确认兑换" width="80%">
+    <p>确定要兑换 <strong>{{ currentReward?.name }}</strong> 吗？</p>
+    <p class="points-info">需要消耗：<span style="color: #f56c6c;">{{ currentReward?.points_required }} 积分</span></p>
+    <p class="current-points">当前积分：<span style="color: #67c23a;">{{ user?.points_balance || 0 }} 积分</span></p>
+    <template #footer>
+      <span class="dialog-footer">
+        <el-button @click="exchangeDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmExchange" :loading="exchanging">确认兑换</el-button>
+      </span>
+    </template>
+  </el-dialog>
 </template>
 
 <script setup>
@@ -78,6 +91,9 @@ const userStore = useUserStore()
 const user = computed(() => userStore.user)
 const rewards = ref([])
 const exchangeRecords = ref([])
+const exchangeDialogVisible = ref(false)
+const currentReward = ref(null)
+const exchanging = ref(false)
 
 const loadRewards = async () => {
   try {
@@ -97,10 +113,18 @@ const loadExchangeRecords = async () => {
   }
 }
 
-const exchange = async (reward) => {
+const exchange = (reward) => {
+  currentReward.value = reward
+  exchangeDialogVisible.value = true
+}
+
+const confirmExchange = async () => {
+  if (!currentReward.value) return
+  
   try {
+    exchanging.value = true
     await api.post('/exchange', {
-      item_id: reward.id,
+      item_id: currentReward.value.id,
       quantity: 1
     })
     ElMessage.success('兑换成功，请等待管理员核销')
@@ -108,28 +132,27 @@ const exchange = async (reward) => {
     await loadRewards()
     await loadExchangeRecords()
     await userStore.getUserInfo()
+    exchangeDialogVisible.value = false
   } catch (error) {
     console.error('Exchange failed:', error)
     ElMessage.error(error.response?.data?.error || '兑换失败')
+  } finally {
+    exchanging.value = false
   }
 }
 
 const getStatusType = (status) => {
   const types = {
-    1: 'success',    // 已完成
-    2: 'warning',    // 处理中
-    3: 'primary',    // 已发货
-    4: 'success'     // 已收货
+    1: 'success',    // 审批通过
+    2: 'warning'     // 待审批
   }
   return types[status] || 'info'
 }
 
 const getStatusText = (status) => {
   const texts = {
-    1: '已完成',
-    2: '处理中',
-    3: '已发货',
-    4: '已收货'
+    1: '审批通过',
+    2: '待审批'
   }
   return texts[status] || '未知'
 }
@@ -155,23 +178,33 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 20px;
+  flex-wrap: wrap;
 }
 
 .back-btn {
   font-size: 14px;
   color: #409EFF;
+  flex-shrink: 0;
 }
 
 .user-info h3 {
   margin: 0;
   flex: 1;
+  min-width: 0;
+  font-size: 18px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .points-tag {
-  font-size: 16px;
-  padding: 8px 15px;
+  font-size: 14px;
+  padding: 6px 12px;
+  flex-shrink: 0;
 }
 
+/* 奖励列表样式 */
 .rewards-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
@@ -189,9 +222,11 @@ onMounted(async () => {
 .reward-info {
   display: flex;
   align-items: flex-start;
+  gap: 15px;
 }
 
 .reward-image {
+  flex-shrink: 0;
   margin-right: 15px;
 }
 
@@ -215,11 +250,13 @@ onMounted(async () => {
 
 .reward-details {
   flex: 1;
+  min-width: 0;
 }
 
 .reward-details h4 {
   margin: 0 0 8px 0;
   font-size: 16px;
+  font-weight: 600;
 }
 
 .reward-details p {
@@ -244,11 +281,83 @@ onMounted(async () => {
   margin-left: 20px;
   display: flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .empty-state {
   padding: 40px 0;
   text-align: center;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .user-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .user-info h3 {
+    width: 100%;
+    font-size: 16px;
+  }
+  
+  .points-tag {
+    font-size: 13px;
+    padding: 5px 10px;
+  }
+  
+  .rewards-list {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  
+  .reward-info {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .reward-image {
+    margin-right: 0;
+    align-self: flex-start;
+  }
+  
+  .reward-details {
+    width: 100%;
+  }
+  
+  .reward-action {
+    margin-left: 0;
+    margin-top: 10px;
+    width: 100%;
+  }
+  
+  .reward-action .el-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .back-btn {
+    font-size: 12px;
+  }
+  
+  .user-info h3 {
+    font-size: 15px;
+  }
+  
+  .points-tag {
+    font-size: 12px;
+    padding: 4px 8px;
+  }
+  
+  .reward-details h4 {
+    font-size: 15px;
+  }
+  
+  .reward-details p {
+    font-size: 13px;
+  }
 }
 
 .records-card {
@@ -257,5 +366,22 @@ onMounted(async () => {
 
 .el-table {
   margin-top: 15px;
+}
+
+/* 确认对话框样式 */
+.points-info {
+  margin: 15px 0;
+  font-size: 14px;
+}
+
+.current-points {
+  margin: 10px 0 15px 0;
+  font-size: 14px;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 </style>

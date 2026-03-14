@@ -200,13 +200,23 @@ func UpdateUserInfo(c *gin.Context) {
 func GetChildren(c *gin.Context) {
 	user := c.MustGet("user").(*models.User)
 
-	// 只有父母账号可以获取小孩列表
-	if user.UserType != 1 {
+	// 只有父母账号或管理员账号可以获取小孩列表
+	if user.UserType != 1 && user.UserType != 3 {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied"})
 		return
 	}
 
-	children, err := models.GetChildrenByParentID(user.ID)
+	var children []*models.User
+	var err error
+
+	// 如果是父母账号，只获取自己的小孩
+	if user.UserType == 1 {
+		children, err = models.GetChildrenByParentID(user.ID)
+	} else {
+		// 如果是管理员账号，获取所有小孩
+		children, err = models.GetAllChildren()
+	}
+
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -279,8 +289,8 @@ func CreateChild(c *gin.Context) {
 func UpdateChild(c *gin.Context) {
 	user := c.MustGet("user").(*models.User)
 
-	// 只有父母账号可以更新小孩账号
-	if user.UserType != 1 {
+	// 只有父母账号或管理员账号可以更新小孩账号
+	if user.UserType != 1 && user.UserType != 3 {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied"})
 		return
 	}
@@ -292,14 +302,15 @@ func UpdateChild(c *gin.Context) {
 		return
 	}
 
-	// 检查小孩账号是否属于当前父母
+	// 获取小孩信息
 	child, err := models.GetUserByID(childIDInt)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Child not found"})
 		return
 	}
 
-	if child.ParentID != user.ID {
+	// 检查权限：父母只能更新自己的小孩，管理员可以更新所有小孩
+	if user.UserType == 1 && child.ParentID != user.ID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied"})
 		return
 	}
@@ -344,8 +355,8 @@ func UpdateChild(c *gin.Context) {
 func DeleteChild(c *gin.Context) {
 	user := c.MustGet("user").(*models.User)
 
-	// 只有父母账号可以删除小孩账号
-	if user.UserType != 1 {
+	// 只有父母账号或管理员账号可以删除小孩账号
+	if user.UserType != 1 && user.UserType != 3 {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied"})
 		return
 	}
@@ -357,14 +368,15 @@ func DeleteChild(c *gin.Context) {
 		return
 	}
 
-	// 检查小孩账号是否属于当前父母
+	// 获取小孩信息
 	child, err := models.GetUserByID(childIDInt)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Child not found"})
 		return
 	}
 
-	if child.ParentID != user.ID {
+	// 检查权限：父母只能删除自己的小孩，管理员可以删除所有小孩
+	if user.UserType == 1 && child.ParentID != user.ID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied"})
 		return
 	}
@@ -376,4 +388,47 @@ func DeleteChild(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Child deleted successfully"})
+}
+
+// GetChild 获取单个小孩信息
+func GetChild(c *gin.Context) {
+	user := c.MustGet("user").(*models.User)
+
+	// 只有父母账号或管理员账号可以获取小孩信息
+	if user.UserType != 1 && user.UserType != 3 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied"})
+		return
+	}
+
+	childID := c.Param("id")
+	childIDInt, err := strconv.ParseInt(childID, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid child ID"})
+		return
+	}
+
+	// 获取小孩信息
+	child, err := models.GetUserByID(childIDInt)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Child not found"})
+		return
+	}
+
+	// 检查权限：父母只能查看自己的小孩，管理员可以查看所有小孩
+	if user.UserType == 1 && child.ParentID != user.ID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"child": gin.H{
+			"id":        child.ID,
+			"username":  child.Username,
+			"name":      child.Name,
+			"phone":     child.Phone,
+			"email":     child.Email,
+			"user_type": child.UserType,
+			"status":    child.Status,
+		},
+	})
 }

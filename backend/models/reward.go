@@ -32,7 +32,7 @@ type ExchangeRecord struct {
 	Points       int         `json:"points"`
 	Quantity     int         `json:"quantity"`
 	ExchangeTime time.Time   `json:"exchange_time"`
-	DeliveryInfo string      `json:"delivery_info"`
+	DeliveryInfo *string     `json:"delivery_info"`
 	Status       int         `json:"status"`
 	CreateTime   time.Time   `json:"create_time"`
 	UpdateTime   time.Time   `json:"update_time"`
@@ -136,13 +136,21 @@ func CreateExchangeRecord(record *ExchangeRecord) error {
 		}
 	}()
 
+	// 先查询奖励物品的库存
+	var stock int
+	stockQuery := `SELECT stock FROM reward_item WHERE id = ?`
+	err = tx.QueryRow(stockQuery, record.ItemID).Scan(&stock)
+	if err != nil {
+		return err
+	}
+
 	// 插入兑换记录
 	// 如果 delivery_info 为空，则使用 NULL
 	var deliveryInfo interface{}
-	if record.DeliveryInfo == "" {
+	if record.DeliveryInfo == nil || *record.DeliveryInfo == "" {
 		deliveryInfo = nil
 	} else {
-		deliveryInfo = record.DeliveryInfo
+		deliveryInfo = *record.DeliveryInfo
 	}
 
 	query := `INSERT INTO exchange_record (user_id, item_id, points, quantity, exchange_time, 
@@ -161,9 +169,17 @@ func CreateExchangeRecord(record *ExchangeRecord) error {
 	record.ID = id
 
 	// 更新奖励物品库存和已兑换数量
-	updateQuery := `UPDATE reward_item SET stock = stock - ?, user_exchanged = user_exchanged + ? 
-			 WHERE id = ?`
-	_, err = tx.Exec(updateQuery, record.Quantity, record.Quantity, record.ItemID)
+	// 如果库存为 -1（无限库存），则不减少库存
+	var updateQuery string
+	if stock == -1 {
+		updateQuery = `UPDATE reward_item SET user_exchanged = user_exchanged + ? 
+				 WHERE id = ?`
+		_, err = tx.Exec(updateQuery, record.Quantity, record.ItemID)
+	} else {
+		updateQuery = `UPDATE reward_item SET stock = stock - ?, user_exchanged = user_exchanged + ? 
+				 WHERE id = ?`
+		_, err = tx.Exec(updateQuery, record.Quantity, record.Quantity, record.ItemID)
+	}
 	if err != nil {
 		return err
 	}
@@ -232,9 +248,77 @@ func GetExchangeRecordsByUserID(userID int64) ([]*ExchangeRecord, error) {
 	return records, nil
 }
 
+// GetAllExchangeRecords 获取所有兑换记录（管理员）
+func GetAllExchangeRecords() ([]*ExchangeRecord, error) {
+	query := `SELECT er.id, er.user_id, er.item_id, er.points, er.quantity, er.exchange_time, 
+			 er.delivery_info, er.status, er.create_time, er.update_time, 
+			 ri.name, ri.description, ri.image, ri.category,
+			 u.name as user_name
+			 FROM exchange_record er 
+			 JOIN reward_item ri ON er.item_id = ri.id 
+			 JOIN user u ON er.user_id = u.id
+			 ORDER BY er.create_time DESC`
+	rows, err := config.DB.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	records := []*ExchangeRecord{}
+	for rows.Next() {
+		record := &ExchangeRecord{}
+		item := &RewardItem{}
+		var userName string
+		err := rows.Scan(
+			&record.ID, &record.UserID, &record.ItemID, &record.Points, &record.Quantity,
+			&record.ExchangeTime, &record.DeliveryInfo, &record.Status, &record.CreateTime,
+			&record.UpdateTime, &item.Name, &item.Description, &item.Image, &item.Category,
+			&userName,
+		)
+		if err != nil {
+			return nil, err
+		}
+		record.Item = item
+		// 将用户名放入 Item 的 Description 字段中（临时方案）
+		item.Description = userName
+		records = append(records, record)
+	}
+	return records, nil
+}
+
 // UpdateExchangeStatus 更新兑换状态
 func UpdateExchangeStatus(id int64, status int) error {
 	query := `UPDATE exchange_record SET status = ?, update_time = NOW() WHERE id = ?`
 	_, err := config.DB.Exec(query, status, id)
 	return err
+}
+
+// DeleteRewardItem 删除奖励物品
+func DeleteRewardItem(id int64) error {
+	// 开始事务
+	tx, err := config.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// 先删除相关的兑换记录
+	exchangeQuery := `DELETE FROM exchange_record WHERE item_id = ?`
+	_, err = tx.Exec(exchangeQuery, id)
+	if err != nil {
+		return err
+	}
+
+	// 再删除奖励物品
+	rewardQuery := `DELETE FROM reward_item WHERE id = ?`
+	_, err = tx.Exec(rewardQuery, id)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }

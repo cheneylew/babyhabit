@@ -28,14 +28,32 @@ const isAuthenticated = computed(() => userStore.isAuthenticated)
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+  max-width: 100%;
 }
 
-body {
+html, body {
   font-family: Arial, sans-serif;
   background-color: #f5f7fa;
+  overflow-x: hidden;
+  width: 100%;
+  position: relative;
 }
 
 #app {
   min-height: 100vh;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+/* 防止图片和其他元素超出容器 */
+img, video, iframe {
+  max-width: 100%;
+  height: auto;
+}
+
+/* 防止长文本导致横向滚动 */
+p, h1, h2, h3, h4, h5, h6 {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 </style>

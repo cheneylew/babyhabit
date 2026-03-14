@@ -32,8 +32,10 @@
           <el-input v-model="registerForm.parent_id" placeholder="请输入父母账号ID" />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="register" :loading="isLoading">注册</el-button>
-          <el-button @click="$router.push('/login')">登录</el-button>
+          <div class="form-actions">
+            <el-button type="primary" @click="register" :loading="isLoading">注册</el-button>
+            <el-button @click="$router.push('/login')">登录</el-button>
+          </div>
         </el-form-item>
       </el-form>
     </el-card>
@@ -104,6 +106,22 @@ const register = async () => {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 }
 
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .register-card {
+    width: 90%;
+    max-width: 500px;
+  }
+  
+  .el-form {
+    padding: 0 15px;
+  }
+  
+  .el-button {
+    width: 90px;
+  }
+}
+
 .register-header {
   text-align: center;
   color: #333;
@@ -118,5 +136,12 @@ const register = async () => {
 .el-button {
   width: 100px;
   margin-right: 10px;
+  display: inline-block;
+}
+
+.form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
 }
 </style>

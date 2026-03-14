@@ -31,3 +31,7 @@ go.work.sum
 # .idea/
 # .vscode/
 frontend/node_modules
+build
+frontend/dist
+backend/files
+babyhabit

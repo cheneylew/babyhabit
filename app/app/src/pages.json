@@ -1,0 +1,142 @@
+{
+	"pages": [ //pages数组中第一项表示应用启动页，参考：https://uniapp.dcloud.io/collocation/pages
+		{
+			"path": "pages/login/login",
+			"style": {
+				"navigationBarTitleText": "登录"
+			}
+		},
+		{
+			"path": "pages/register/register",
+			"style": {
+				"navigationBarTitleText": "注册"
+			}
+		},
+		{
+			"path": "pages/home/home",
+			"style": {
+				"navigationBarTitleText": "首页"
+			}
+		},
+		{
+			"path": "pages/checkin/checkin",
+			"style": {
+				"navigationBarTitleText": "打卡"
+			}
+		},
+		{
+			"path": "pages/rewards/rewards",
+			"style": {
+				"navigationBarTitleText": "奖励"
+			}
+		},
+		{
+			"path": "pages/exchange/exchange",
+			"style": {
+				"navigationBarTitleText": "兑换"
+			}
+		},
+		{
+			"path": "pages/child-rewards/child-rewards",
+			"style": {
+				"navigationBarTitleText": "孩子奖励"
+			}
+		},
+		{
+			"path": "pages/admin/admin",
+			"style": {
+				"navigationBarTitleText": "管理员"
+			}
+		},
+		{
+			"path": "pages/admin/children/children",
+			"style": {
+				"navigationBarTitleText": "小孩管理"
+			}
+		},
+		{
+			"path": "pages/admin/children/edit/edit",
+			"style": {
+				"navigationBarTitleText": "编辑小孩"
+			}
+		},
+		{
+			"path": "pages/admin/children/assign-habit/assign-habit",
+			"style": {
+				"navigationBarTitleText": "分配习惯"
+			}
+		},
+		{
+			"path": "pages/admin/children/assigned-habits/assigned-habits",
+			"style": {
+				"navigationBarTitleText": "已分配习惯"
+			}
+		},
+		{
+			"path": "pages/admin/children/checkin-records/checkin-records",
+			"style": {
+				"navigationBarTitleText": "打卡记录"
+			}
+		},
+		{
+			"path": "pages/admin/habits/habits",
+			"style": {
+				"navigationBarTitleText": "习惯管理"
+			}
+		},
+		{
+			"path": "pages/admin/habits/edit/edit",
+			"style": {
+				"navigationBarTitleText": "编辑习惯"
+			}
+		},
+		{
+			"path": "pages/admin/habits/assignments/assignments",
+			"style": {
+				"navigationBarTitleText": "习惯分配记录"
+			}
+		},
+		{
+			"path": "pages/admin/habits/records/records",
+			"style": {
+				"navigationBarTitleText": "习惯打卡记录"
+			}
+		},
+		{
+			"path": "pages/admin/rewards/rewards",
+			"style": {
+				"navigationBarTitleText": "奖励管理"
+			}
+		},
+		{
+			"path": "pages/admin/rewards/edit/edit",
+			"style": {
+				"navigationBarTitleText": "编辑奖励"
+			}
+		},
+		{
+			"path": "pages/admin/rewards/assignments/assignments",
+			"style": {
+				"navigationBarTitleText": "奖励分配记录"
+			}
+		},
+		{
+			"path": "pages/admin/rewards/redemptions/redemptions",
+			"style": {
+				"navigationBarTitleText": "奖励兑换记录"
+			}
+		},
+		{
+			"path": "pages/admin/exchanges/exchanges",
+			"style": {
+				"navigationBarTitleText": "兑换管理"
+			}
+		}
+	],
+	"globalStyle": {
+		"navigationBarTextStyle": "black",
+		"navigationBarTitleText": "BabyHabit",
+		"navigationBarBackgroundColor": "#F8F8F8",
+		"backgroundColor": "#F8F8F8"
+	}
+}
