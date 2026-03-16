@@ -104,6 +104,7 @@ func SetupRoutes(router *gin.Engine) {
 		admin.DELETE("/rewards/:id", controllers.DeleteRewardItem)
 		admin.GET("/exchanges", controllers.GetAllExchangeRecords)
 		admin.PUT("/exchange/:id/status", controllers.UpdateExchangeStatus)
+		admin.DELETE("/exchanges/:id", controllers.DeleteExchangeRecord)
 
 		// 名言警句管理
 		admin.POST("/quotes", controllers.CreateQuote)

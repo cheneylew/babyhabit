@@ -255,3 +255,20 @@ func DeleteRewardItem(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Reward item deleted successfully"})
 }
+
+// DeleteExchangeRecord 删除兑换记录
+func DeleteExchangeRecord(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid record ID"})
+		return
+	}
+
+	if err := models.DeleteExchangeRecord(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Exchange record deleted successfully"})
+}

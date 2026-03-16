@@ -136,10 +136,11 @@ func CreateExchangeRecord(record *ExchangeRecord) error {
 		}
 	}()
 
-	// 先查询奖励物品的库存
+	// 先查询奖励物品的库存和基本信息
 	var stock int
-	stockQuery := `SELECT stock FROM reward_item WHERE id = ?`
-	err = tx.QueryRow(stockQuery, record.ItemID).Scan(&stock)
+	var itemName, itemImage, itemCategory string
+	stockQuery := `SELECT stock, name, image, category FROM reward_item WHERE id = ?`
+	err = tx.QueryRow(stockQuery, record.ItemID).Scan(&stock, &itemName, &itemImage, &itemCategory)
 	if err != nil {
 		return err
 	}
@@ -153,10 +154,10 @@ func CreateExchangeRecord(record *ExchangeRecord) error {
 		deliveryInfo = *record.DeliveryInfo
 	}
 
-	query := `INSERT INTO exchange_record (user_id, item_id, points, quantity, exchange_time, 
+	query := `INSERT INTO exchange_record (user_id, item_id, item_name, item_image, item_category, points, quantity, exchange_time, 
 			 delivery_info, status, create_time, update_time) 
-			 VALUES (?, ?, ?, ?, NOW(), ?, ?, NOW(), NOW())`
-	result, err := tx.Exec(query, record.UserID, record.ItemID, record.Points, record.Quantity,
+			 VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, NOW(), NOW())`
+	result, err := tx.Exec(query, record.UserID, record.ItemID, itemName, itemImage, itemCategory, record.Points, record.Quantity,
 		deliveryInfo, record.Status)
 	if err != nil {
 		return err
@@ -217,11 +218,9 @@ func CreateExchangeRecord(record *ExchangeRecord) error {
 
 // GetExchangeRecordsByUserID 获取用户的兑换记录
 func GetExchangeRecordsByUserID(userID int64) ([]*ExchangeRecord, error) {
-	query := `SELECT er.id, er.user_id, er.item_id, er.points, er.quantity, er.exchange_time, 
-			 er.delivery_info, er.status, er.create_time, er.update_time, 
-			 ri.name, ri.description, ri.image, ri.category 
+	query := `SELECT er.id, er.user_id, er.item_id, er.item_name, er.item_image, er.item_category, er.points, er.quantity, er.exchange_time, 
+			 er.delivery_info, er.status, er.create_time, er.update_time 
 			 FROM exchange_record er 
-			 JOIN reward_item ri ON er.item_id = ri.id 
 			 WHERE er.user_id = ? 
 			 ORDER BY er.create_time DESC`
 	rows, err := config.DB.Query(query, userID)
@@ -235,9 +234,9 @@ func GetExchangeRecordsByUserID(userID int64) ([]*ExchangeRecord, error) {
 		record := &ExchangeRecord{}
 		item := &RewardItem{}
 		err := rows.Scan(
-			&record.ID, &record.UserID, &record.ItemID, &record.Points, &record.Quantity,
+			&record.ID, &record.UserID, &record.ItemID, &item.Name, &item.Image, &item.Category, &record.Points, &record.Quantity,
 			&record.ExchangeTime, &record.DeliveryInfo, &record.Status, &record.CreateTime,
-			&record.UpdateTime, &item.Name, &item.Description, &item.Image, &item.Category,
+			&record.UpdateTime,
 		)
 		if err != nil {
 			return nil, err
@@ -250,12 +249,10 @@ func GetExchangeRecordsByUserID(userID int64) ([]*ExchangeRecord, error) {
 
 // GetAllExchangeRecords 获取所有兑换记录（管理员）
 func GetAllExchangeRecords() ([]*ExchangeRecord, error) {
-	query := `SELECT er.id, er.user_id, er.item_id, er.points, er.quantity, er.exchange_time, 
-			 er.delivery_info, er.status, er.create_time, er.update_time, 
-			 ri.name, ri.description, ri.image, ri.category,
+	query := `SELECT er.id, er.user_id, er.item_id, er.item_name, er.item_image, er.item_category, er.points, er.quantity, er.exchange_time, 
+			 er.delivery_info, er.status, er.create_time, er.update_time,
 			 u.name as user_name
 			 FROM exchange_record er 
-			 JOIN reward_item ri ON er.item_id = ri.id 
 			 JOIN user u ON er.user_id = u.id
 			 ORDER BY er.create_time DESC`
 	rows, err := config.DB.Query(query)
@@ -270,10 +267,9 @@ func GetAllExchangeRecords() ([]*ExchangeRecord, error) {
 		item := &RewardItem{}
 		var userName string
 		err := rows.Scan(
-			&record.ID, &record.UserID, &record.ItemID, &record.Points, &record.Quantity,
+			&record.ID, &record.UserID, &record.ItemID, &item.Name, &item.Image, &item.Category, &record.Points, &record.Quantity,
 			&record.ExchangeTime, &record.DeliveryInfo, &record.Status, &record.CreateTime,
-			&record.UpdateTime, &item.Name, &item.Description, &item.Image, &item.Category,
-			&userName,
+			&record.UpdateTime, &userName,
 		)
 		if err != nil {
 			return nil, err
@@ -295,30 +291,16 @@ func UpdateExchangeStatus(id int64, status int) error {
 
 // DeleteRewardItem 删除奖励物品
 func DeleteRewardItem(id int64) error {
-	// 开始事务
-	tx, err := config.DB.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		}
-	}()
-
-	// 先删除相关的兑换记录
-	exchangeQuery := `DELETE FROM exchange_record WHERE item_id = ?`
-	_, err = tx.Exec(exchangeQuery, id)
-	if err != nil {
-		return err
-	}
-
-	// 再删除奖励物品
+	// 直接删除奖励物品，不再删除相关的兑换记录
+	// 因为兑换记录已经包含了冗余字段，与奖励管理解耦
 	rewardQuery := `DELETE FROM reward_item WHERE id = ?`
-	_, err = tx.Exec(rewardQuery, id)
-	if err != nil {
-		return err
-	}
+	_, err := config.DB.Exec(rewardQuery, id)
+	return err
+}
 
-	return tx.Commit()
+// DeleteExchangeRecord 删除兑换记录
+func DeleteExchangeRecord(id int64) error {
+	query := `DELETE FROM exchange_record WHERE id = ?`
+	_, err := config.DB.Exec(query, id)
+	return err
 }

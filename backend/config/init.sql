@@ -320,3 +320,12 @@ INSERT INTO quote (content, meaning, author) VALUES
 ('“落红不是无情物，化作春泥更护花。”', '退居幕后也要继续贡献力量，滋养后来者。', '龚自珍'),
 ('“千磨万击还坚劲，任尔东西南北风。”', '历经无数考验仍坚韧不拔，从容面对挑战。', '郑燮'),
 ('“粉骨碎身浑不怕，要留清白在人间。”', '即使是最脆弱的人，也能在时间的长河中保持健康。', '李清照');
+
+-- 增量修改：为兑换记录表添加冗余字段并移除外键约束
+-- 添加冗余字段存储奖励物品信息
+ALTER TABLE exchange_record ADD COLUMN item_name VARCHAR(255) NOT NULL DEFAULT '' AFTER item_id;
+ALTER TABLE exchange_record ADD COLUMN item_image VARCHAR(255) DEFAULT NULL AFTER item_name;
+ALTER TABLE exchange_record ADD COLUMN item_category VARCHAR(100) DEFAULT NULL AFTER item_image;
+
+-- 移除外键约束，使兑换记录与奖励管理解耦
+ALTER TABLE exchange_record DROP FOREIGN KEY exchange_record_ibfk_2;

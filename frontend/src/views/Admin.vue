@@ -119,9 +119,23 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="150">
+            <el-table-column label="操作" width="220">
               <template #default="scope">
-                <el-button type="primary" size="small" @click="updateExchangeStatus(scope.row)">更新状态</el-button>
+                <el-button 
+                  type="primary" 
+                  size="small" 
+                  @click="approveExchange(scope.row)"
+                  :disabled="scope.row.status === 1"
+                >
+                  通过
+                </el-button>
+                <el-button 
+                  type="danger" 
+                  size="small" 
+                  @click="deleteExchangeRecord(scope.row.id)"
+                >
+                  删除
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -307,8 +321,8 @@
         </el-form-item>
         <el-form-item label="状态" prop="status">
           <el-radio-group v-model="rewardForm.status">
-            <el-radio value="1">启用</el-radio>
-            <el-radio value="0">禁用</el-radio>
+            <el-radio :value="1">启用</el-radio>
+            <el-radio :value="0">禁用</el-radio>
           </el-radio-group>
         </el-form-item>
       </el-form>
@@ -1176,23 +1190,39 @@ const deleteReward = async (id) => {
   }
 }
 
-// 更新兑换状态
-const updateExchangeStatus = (exchange) => {
-  currentExchange.value = exchange
-  statusForm.value = { status: exchange.status }
-  statusDialogVisible.value = true
-}
-
-// 保存兑换状态
-const saveExchangeStatus = async () => {
-  if (!statusFormRef.value.validate()) return
-  
+// 确认审批通过
+const approveExchange = async (exchange) => {
   try {
-    await api.put(`/admin/exchange/${currentExchange.value.id}/status`, { status: statusForm.value.status })
-    statusDialogVisible.value = false
+    await api.put(`/admin/exchange/${exchange.id}/status`, { status: 1 })
+    ElMessage.success('审批通过成功')
     await loadExchangeRecords()
   } catch (error) {
-    console.error('Failed to update exchange status:', error)
+    console.error('Failed to approve exchange:', error)
+    ElMessage.error('审批通过失败')
+  }
+}
+
+// 删除兑换记录
+const deleteExchangeRecord = async (id) => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除这个兑换记录吗？此操作不可恢复。',
+      '删除确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    
+    await api.delete(`/admin/exchanges/${id}`)
+    ElMessage.success('删除成功')
+    await loadExchangeRecords()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('Failed to delete exchange record:', error)
+      ElMessage.error('删除失败')
+    }
   }
 }
 
