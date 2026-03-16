@@ -72,6 +72,16 @@ func SetupRoutes(router *gin.Engine) {
 		auth.GET("/rewards", controllers.GetRewardItems)
 		auth.POST("/exchange", controllers.Exchange)
 		auth.GET("/exchange/records", controllers.GetExchangeRecords)
+
+		// 名言警句API
+		auth.GET("/quote/random", controllers.GetRandomQuote)
+
+		// 词汇学习API
+		auth.GET("/vocabulary/plan", controllers.GetVocabularyPlan)
+		auth.GET("/vocabulary/start", controllers.StartVocabularyLearning)
+		auth.GET("/vocabulary/options", controllers.GetVocabularyOptions)
+		auth.POST("/vocabulary/record", controllers.RecordVocabularyLearning)
+		auth.GET("/vocabulary/stats", controllers.GetVocabularyStats)
 	}
 
 	// 管理员路由
@@ -114,8 +124,14 @@ func SetupRoutes(router *gin.Engine) {
 		admin.DELETE("/quotes/:id", controllers.DeleteQuote)
 		admin.POST("/quotes/batch", controllers.BatchCreateQuotes)
 		admin.DELETE("/quotes/batch", controllers.BatchDeleteQuotes)
-	}
 
-	// 公开API - 随机名言警句（不需要认证）
-	public.GET("/quote/random", controllers.GetRandomQuote)
+		// 词汇学习管理
+		admin.POST("/vocabulary", controllers.CreateVocabulary)
+		admin.GET("/vocabulary", controllers.GetVocabularies)
+		admin.GET("/vocabulary/:id", controllers.GetVocabulary)
+		admin.PUT("/vocabulary/:id", controllers.UpdateVocabulary)
+		admin.DELETE("/vocabulary/:id", controllers.DeleteVocabulary)
+		admin.POST("/vocabulary/batch", controllers.BatchCreateVocabulary)
+		admin.DELETE("/vocabulary/batch", controllers.BatchDeleteVocabulary)
+	}
 }

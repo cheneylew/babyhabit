@@ -177,6 +177,50 @@
             class="pagination"
           />
         </el-tab-pane>
+
+        <!-- 词汇管理 -->
+        <el-tab-pane label="词汇管理" name="vocabulary">
+          <div class="vocabulary-toolbar">
+            <el-button type="primary" @click="addVocabulary">添加词汇</el-button>
+            <el-button type="success" @click="vocabularyBatchImportDialogVisible = true">批量导入</el-button>
+            <el-button type="danger" :disabled="selectedVocabularies.length === 0" @click="batchDeleteVocabularies">批量删除</el-button>
+          </div>
+          <el-table :data="vocabularies" style="width: 100%" class="vocabulary-table" @selection-change="handleVocabularySelectionChange">
+            <el-table-column type="selection" width="55" />
+            <el-table-column prop="id" label="ID" width="80" />
+            <el-table-column prop="english" label="英文" width="150" />
+            <el-table-column prop="chinese" label="中文" width="150" />
+            <el-table-column prop="phonetic" label="音标" width="150" />
+            <el-table-column prop="type" label="类型" width="100">
+              <template #default="scope">
+                {{ scope.row.type === 'word' ? '单词' : '句子' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="grade" label="年级" width="100" />
+            <el-table-column prop="category" label="分类" width="100" />
+            <el-table-column prop="create_time" label="创建时间" width="180">
+              <template #default="scope">
+                {{ formatDate(scope.row.create_time) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="200">
+              <template #default="scope">
+                <el-button type="primary" size="small" @click="editVocabulary(scope.row)">编辑</el-button>
+                <el-button type="danger" size="small" @click="deleteVocabulary(scope.row.id)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-pagination
+            v-model:current-page="vocabularyPage"
+            v-model:page-size="vocabularyPageSize"
+            :total="vocabularyTotal"
+            :page-sizes="[10, 20, 50, 100]"
+            layout="total, sizes, prev, pager, next"
+            @size-change="loadVocabularies"
+            @current-change="loadVocabularies"
+            class="pagination"
+          />
+        </el-tab-pane>
       </el-tabs>
     </el-card>
 
@@ -510,6 +554,71 @@
         </span>
       </template>
     </el-dialog>
+
+    <!-- 词汇编辑对话框 -->
+    <el-dialog v-model="vocabularyDialogVisible" :title="editingVocabulary ? '编辑词汇' : '添加词汇'" width="600px">
+      <el-form :model="vocabularyForm" :rules="vocabularyRules" ref="vocabularyFormRef" label-width="80px">
+        <el-form-item label="英文" prop="english">
+          <el-input v-model="vocabularyForm.english" placeholder="请输入英文单词或句子" />
+        </el-form-item>
+        <el-form-item label="中文" prop="chinese">
+          <el-input v-model="vocabularyForm.chinese" placeholder="请输入中文翻译" />
+        </el-form-item>
+        <el-form-item label="音标" prop="phonetic">
+          <el-input v-model="vocabularyForm.phonetic" placeholder="请输入音标（可选）" />
+        </el-form-item>
+        <el-form-item label="类型" prop="type">
+          <el-select v-model="vocabularyForm.type" placeholder="请选择类型">
+            <el-option label="单词" value="word" />
+            <el-option label="句子" value="sentence" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="年级" prop="grade">
+          <el-input v-model="vocabularyForm.grade" placeholder="请输入年级（如：一年级）" />
+        </el-form-item>
+        <el-form-item label="教材" prop="textbook">
+          <el-input v-model="vocabularyForm.textbook" placeholder="请输入教材（如：人教版）" />
+        </el-form-item>
+        <el-form-item label="分类" prop="category">
+          <el-input v-model="vocabularyForm.category" placeholder="请输入分类（如：水果）" />
+        </el-form-item>
+        <el-form-item label="例句" prop="example_sentence">
+          <el-input type="textarea" :rows="3" v-model="vocabularyForm.example_sentence" placeholder="请输入例句（可选）" />
+        </el-form-item>
+        <el-form-item label="音频URL" prop="audio_url">
+          <el-input v-model="vocabularyForm.audio_url" placeholder="请输入音频URL（可选）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="vocabularyDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="saveVocabulary">保存</el-button>
+        </span>
+      </template>
+    </el-dialog>
+
+    <!-- 词汇批量导入对话框 -->
+    <el-dialog v-model="vocabularyBatchImportDialogVisible" title="批量导入词汇" width="700px">
+      <el-form label-width="100px">
+        <el-form-item label="导入格式">
+          <p class="import-hint">每行一条词汇，格式：英文|中文|音标|类型|年级|教材|分类（只有英文和中文是必填）</p>
+          <p class="import-hint">类型选项：word（单词）、sentence（句子）</p>
+          <p class="import-hint">示例：</p>
+          <p class="import-example">apple|苹果|/ˈæpl/|word|一年级|人教版|水果</p>
+          <p class="import-example">I love you|我爱你|/aɪ lʌv juː/|sentence|三年级|人教版|日常用语</p>
+          <p class="import-example">banana|香蕉||word|一年级|人教版|水果</p>
+        </el-form-item>
+        <el-form-item label="词汇内容">
+          <el-input type="textarea" :rows="10" v-model="vocabularyBatchImportContent" placeholder="请输入要导入的词汇，每行一条" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="vocabularyBatchImportDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="saveVocabularyBatchImport">导入</el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -664,6 +773,34 @@ const quoteFormRef = ref(null)
 const selectedQuotes = ref([])
 const batchImportDialogVisible = ref(false)
 const batchImportContent = ref('')
+
+// 词汇管理相关
+const vocabularies = ref([])
+const vocabularyPage = ref(1)
+const vocabularyPageSize = ref(10)
+const vocabularyTotal = ref(0)
+const vocabularyDialogVisible = ref(false)
+const vocabularyBatchImportDialogVisible = ref(false)
+const editingVocabulary = ref(null)
+const vocabularyForm = ref({
+  english: '',
+  chinese: '',
+  phonetic: '',
+  type: 'word',
+  grade: '',
+  textbook: '',
+  category: '',
+  example_sentence: '',
+  audio_url: ''
+})
+const vocabularyRules = {
+  english: [{ required: true, message: '请输入英文', trigger: 'blur' }],
+  chinese: [{ required: true, message: '请输入中文', trigger: 'blur' }],
+  type: [{ required: true, message: '请选择类型', trigger: 'change' }]
+}
+const vocabularyFormRef = ref(null)
+const selectedVocabularies = ref([])
+const vocabularyBatchImportContent = ref('')
 
 // 加载名言警句列表
 const loadQuotes = async () => {
@@ -849,6 +986,211 @@ const saveBatchImport = async () => {
   } catch (error) {
     if (error !== 'cancel') {
       console.error('Failed to batch import quotes:', error)
+      ElMessage.error('批量导入失败：' + (error.response?.data?.error || error.message))
+    }
+  }
+}
+
+// 加载词汇列表
+const loadVocabularies = async () => {
+  try {
+    const response = await api.get('/admin/vocabulary', {
+      params: {
+        page: vocabularyPage.value,
+        page_size: vocabularyPageSize.value
+      }
+    })
+    vocabularies.value = response.data.vocabularies
+    vocabularyTotal.value = response.data.total
+  } catch (error) {
+    console.error('Failed to load vocabularies:', error)
+    ElMessage.error('加载词汇失败')
+  }
+}
+
+// 添加词汇
+const addVocabulary = () => {
+  editingVocabulary.value = null
+  vocabularyForm.value = {
+    english: '',
+    chinese: '',
+    phonetic: '',
+    type: 'word',
+    grade: '',
+    textbook: '',
+    category: '',
+    example_sentence: '',
+    audio_url: ''
+  }
+  vocabularyDialogVisible.value = true
+}
+
+// 编辑词汇
+const editVocabulary = (vocabulary) => {
+  editingVocabulary.value = vocabulary
+  vocabularyForm.value = {
+    english: vocabulary.english || '',
+    chinese: vocabulary.chinese || '',
+    phonetic: vocabulary.phonetic || '',
+    type: vocabulary.type || 'word',
+    grade: vocabulary.grade || '',
+    textbook: vocabulary.textbook || '',
+    category: vocabulary.category || '',
+    example_sentence: vocabulary.example_sentence || '',
+    audio_url: vocabulary.audio_url || ''
+  }
+  vocabularyDialogVisible.value = true
+}
+
+// 保存词汇
+const saveVocabulary = async () => {
+  if (!vocabularyFormRef.value.validate()) return
+
+  try {
+    if (!editingVocabulary.value) {
+      // 添加词汇需要二次确认
+      await ElMessageBox.confirm(
+        '确定要添加这个词汇吗？',
+        '添加确认',
+        {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'info',
+        }
+      )
+    }
+
+    if (editingVocabulary.value) {
+      // 更新词汇
+      await api.put(`/admin/vocabulary/${editingVocabulary.value.id}`, vocabularyForm.value)
+      ElMessage.success('更新成功')
+    } else {
+      // 添加词汇
+      await api.post('/admin/vocabulary', vocabularyForm.value)
+      ElMessage.success('添加成功')
+    }
+    vocabularyDialogVisible.value = false
+    await loadVocabularies()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('Failed to save vocabulary:', error)
+      ElMessage.error('操作失败：' + (error.response?.data?.error || error.message))
+    }
+  }
+}
+
+// 删除词汇
+const deleteVocabulary = async (id) => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除这个词汇吗？此操作不可恢复。',
+      '删除确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+
+    await api.delete(`/admin/vocabulary/${id}`)
+    ElMessage.success('删除成功')
+    await loadVocabularies()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('Failed to delete vocabulary:', error)
+      ElMessage.error('删除失败：' + (error.response?.data?.error || error.message))
+    }
+  }
+}
+
+// 处理词汇选择变化
+const handleVocabularySelectionChange = (selection) => {
+  selectedVocabularies.value = selection
+}
+
+// 批量删除词汇
+const batchDeleteVocabularies = async () => {
+  if (selectedVocabularies.value.length === 0) {
+    ElMessage.warning('请先选择要删除的词汇')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedVocabularies.value.length} 个词汇吗？此操作不可恢复。`,
+      '批量删除确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+
+    const ids = selectedVocabularies.value.map(v => v.id)
+    await api.delete('/admin/vocabulary/batch', { data: { ids } })
+    ElMessage.success('批量删除成功')
+    selectedVocabularies.value = []
+    await loadVocabularies()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('Failed to batch delete vocabularies:', error)
+      ElMessage.error('批量删除失败：' + (error.response?.data?.error || error.message))
+    }
+  }
+}
+
+// 批量导入词汇
+const saveVocabularyBatchImport = async () => {
+  if (!vocabularyBatchImportContent.value.trim()) {
+    ElMessage.warning('请输入要导入的词汇内容')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      '确定要导入这些词汇吗？',
+      '导入确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'info',
+      }
+    )
+
+    // 解析导入内容
+    const lines = vocabularyBatchImportContent.value.trim().split('\n')
+    const vocabularies = []
+
+    for (const line of lines) {
+      if (!line.trim()) continue
+
+      const parts = line.split('|')
+      const english = parts[0] ? parts[0].trim() : ''
+      const chinese = parts[1] ? parts[1].trim() : ''
+      const phonetic = parts[2] ? parts[2].trim() : ''
+      const type = parts[3] ? parts[3].trim() : 'word'
+      const grade = parts[4] ? parts[4].trim() : ''
+      const textbook = parts[5] ? parts[5].trim() : ''
+      const category = parts[6] ? parts[6].trim() : ''
+
+      if (english && chinese) {
+        vocabularies.push({ english, chinese, phonetic, type, grade, textbook, category })
+      }
+    }
+
+    if (vocabularies.length === 0) {
+      ElMessage.warning('没有有效的词汇内容')
+      return
+    }
+
+    await api.post('/admin/vocabulary/batch', { vocabularies })
+    ElMessage.success(`成功导入 ${vocabularies.length} 个词汇`)
+    vocabularyBatchImportDialogVisible.value = false
+    vocabularyBatchImportContent.value = ''
+    await loadVocabularies()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('Failed to batch import vocabularies:', error)
       ElMessage.error('批量导入失败：' + (error.response?.data?.error || error.message))
     }
   }
@@ -1380,13 +1722,14 @@ const logout = () => {
   userStore.logout()
   router.push('/login')
 }
-
+// 页面加载时初始化数据
 onMounted(async () => {
   await loadChildren()
   await loadHabits()
   await loadRewards()
   await loadExchangeRecords()
   await loadQuotes()
+  await loadVocabularies()
 })
 </script>
 

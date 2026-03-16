@@ -329,3 +329,65 @@ ALTER TABLE exchange_record ADD COLUMN item_category VARCHAR(100) DEFAULT NULL A
 
 -- 移除外键约束，使兑换记录与奖励管理解耦
 ALTER TABLE exchange_record DROP FOREIGN KEY exchange_record_ibfk_2;
+
+-- 词汇表
+CREATE TABLE IF NOT EXISTS ab_vocabulary (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    english VARCHAR(255) NOT NULL,
+    chinese VARCHAR(255) NOT NULL,
+    phonetic VARCHAR(100),
+    audio_url VARCHAR(255),
+    example_sentence TEXT,
+    type ENUM('word', 'sentence') DEFAULT 'word',
+    grade VARCHAR(50),
+    textbook VARCHAR(100),
+    category VARCHAR(100),
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 学习记录表
+CREATE TABLE IF NOT EXISTS ab_learning_record (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    vocabulary_id INT NOT NULL,
+    status ENUM('new', 'learning', 'mastered', 'reviewing') DEFAULT 'new',
+    review_stage INT DEFAULT 0,
+    next_review_date DATE,
+    correct_count INT DEFAULT 0,
+    wrong_count INT DEFAULT 0,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY (user_id, vocabulary_id),
+    FOREIGN KEY (user_id) REFERENCES user(id),
+    FOREIGN KEY (vocabulary_id) REFERENCES ab_vocabulary(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 学习打卡表
+CREATE TABLE IF NOT EXISTS ab_study_checkin (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    checkin_date DATE NOT NULL,
+    new_words_count INT DEFAULT 0,
+    review_words_count INT DEFAULT 0,
+    correct_count INT DEFAULT 0,
+    total_count INT DEFAULT 0,
+    duration_minutes INT,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY (user_id, checkin_date),
+    FOREIGN KEY (user_id) REFERENCES user(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 插入一些示例词汇数据
+INSERT INTO ab_vocabulary (english, chinese, phonetic, type, grade, textbook, category) VALUES
+('apple', '苹果', '/ˈæpl/', 'word', '一年级', '人教版', '水果'),
+('banana', '香蕉', '/bəˈnɑːnə/', 'word', '一年级', '人教版', '水果'),
+('cat', '猫', '/kæt/', 'word', '一年级', '人教版', '动物'),
+('dog', '狗', '/dɒɡ/', 'word', '一年级', '人教版', '动物'),
+('book', '书', '/bʊk/', 'word', '一年级', '人教版', '学习用品'),
+('pen', '钢笔', '/pen/', 'word', '一年级', '人教版', '学习用品'),
+('red', '红色', '/red/', 'word', '一年级', '人教版', '颜色'),
+('blue', '蓝色', '/bluː/', 'word', '一年级', '人教版', '颜色'),
+('happy', '开心的', '/ˈhæpi/', 'word', '二年级', '人教版', '情感'),
+('sad', '悲伤的', '/sæd/', 'word', '二年级', '人教版', '情感'),
+('I love you', '我爱你', '/aɪ lʌv juː/', 'sentence', '三年级', '人教版', '日常用语'),
+('Thank you', '谢谢', '/θæŋk juː/', 'sentence', '三年级', '人教版', '日常用语');

@@ -47,6 +47,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/vocabulary',
+    name: 'Vocabulary',
+    component: () => import('../views/Vocabulary.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/admin',
     name: 'Admin',
     component: () => import('../views/Admin.vue'),

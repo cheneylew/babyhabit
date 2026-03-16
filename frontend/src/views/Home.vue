@@ -21,6 +21,15 @@
             >
               积分商城
             </el-button>
+            <el-button 
+              v-if="user?.user_type === 2" 
+              type="info" 
+              size="small" 
+              @click="$router.push('/vocabulary')"
+              style="margin-left: 10px;"
+            >
+              艾宾浩斯单词记忆
+            </el-button>
           </div>
         </div>
         <div class="user-actions">
