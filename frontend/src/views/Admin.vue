@@ -591,8 +591,8 @@
       </el-form>
       <template #footer>
         <span class="dialog-footer">
-          <el-button @click="vocabularyDialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="saveVocabulary">保存</el-button>
+          <el-button @click="vocabularyDialogVisible = false" :disabled="vocabularyLoading">取消</el-button>
+          <el-button type="primary" @click="saveVocabulary" :loading="vocabularyLoading">保存</el-button>
         </span>
       </template>
     </el-dialog>
@@ -601,12 +601,11 @@
     <el-dialog v-model="vocabularyBatchImportDialogVisible" title="批量导入词汇" width="700px">
       <el-form label-width="100px">
         <el-form-item label="导入格式">
-          <p class="import-hint">每行一条词汇，格式：英文|中文|音标|类型|年级|教材|分类（只有英文和中文是必填）</p>
+          <p class="import-hint">每行一条词汇，格式：英文|类型（只有英文是必填，类型默认为word）</p>
           <p class="import-hint">类型选项：word（单词）、sentence（句子）</p>
           <p class="import-hint">示例：</p>
-          <p class="import-example">apple|苹果|/ˈæpl/|word|一年级|人教版|水果</p>
-          <p class="import-example">I love you|我爱你|/aɪ lʌv juː/|sentence|三年级|人教版|日常用语</p>
-          <p class="import-example">banana|香蕉||word|一年级|人教版|水果</p>
+          <p class="import-example">Gesture|word</p>
+          <p class="import-example">Suspicion|word</p>
         </el-form-item>
         <el-form-item label="词汇内容">
           <el-input type="textarea" :rows="10" v-model="vocabularyBatchImportContent" placeholder="请输入要导入的词汇，每行一条" />
@@ -614,8 +613,8 @@
       </el-form>
       <template #footer>
         <span class="dialog-footer">
-          <el-button @click="vocabularyBatchImportDialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="saveVocabularyBatchImport">导入</el-button>
+          <el-button @click="vocabularyBatchImportDialogVisible = false" :disabled="vocabularyBatchImportLoading">取消</el-button>
+          <el-button type="primary" @click="saveVocabularyBatchImport" :loading="vocabularyBatchImportLoading">导入</el-button>
         </span>
       </template>
     </el-dialog>
@@ -795,12 +794,14 @@ const vocabularyForm = ref({
 })
 const vocabularyRules = {
   english: [{ required: true, message: '请输入英文', trigger: 'blur' }],
-  chinese: [{ required: true, message: '请输入中文', trigger: 'blur' }],
+  chinese: [{ required: false, message: '请输入中文', trigger: 'blur' }],
   type: [{ required: true, message: '请选择类型', trigger: 'change' }]
 }
 const vocabularyFormRef = ref(null)
 const selectedVocabularies = ref([])
 const vocabularyBatchImportContent = ref('')
+const vocabularyLoading = ref(false)
+const vocabularyBatchImportLoading = ref(false)
 
 // 加载名言警句列表
 const loadQuotes = async () => {
@@ -1060,6 +1061,8 @@ const saveVocabulary = async () => {
       )
     }
 
+    vocabularyLoading.value = true
+
     if (editingVocabulary.value) {
       // 更新词汇
       await api.put(`/admin/vocabulary/${editingVocabulary.value.id}`, vocabularyForm.value)
@@ -1076,6 +1079,8 @@ const saveVocabulary = async () => {
       console.error('Failed to save vocabulary:', error)
       ElMessage.error('操作失败：' + (error.response?.data?.error || error.message))
     }
+  } finally {
+    vocabularyLoading.value = false
   }
 }
 
@@ -1157,6 +1162,8 @@ const saveVocabularyBatchImport = async () => {
       }
     )
 
+    vocabularyBatchImportLoading.value = true
+
     // 解析导入内容
     const lines = vocabularyBatchImportContent.value.trim().split('\n')
     const vocabularies = []
@@ -1166,14 +1173,14 @@ const saveVocabularyBatchImport = async () => {
 
       const parts = line.split('|')
       const english = parts[0] ? parts[0].trim() : ''
-      const chinese = parts[1] ? parts[1].trim() : ''
-      const phonetic = parts[2] ? parts[2].trim() : ''
-      const type = parts[3] ? parts[3].trim() : 'word'
-      const grade = parts[4] ? parts[4].trim() : ''
-      const textbook = parts[5] ? parts[5].trim() : ''
-      const category = parts[6] ? parts[6].trim() : ''
+      const type = parts[1] ? parts[1].trim() : 'word'
+      const chinese = ''
+      const phonetic = ''
+      const grade = ''
+      const textbook = ''
+      const category = ''
 
-      if (english && chinese) {
+      if (english) {
         vocabularies.push({ english, chinese, phonetic, type, grade, textbook, category })
       }
     }
@@ -1193,6 +1200,8 @@ const saveVocabularyBatchImport = async () => {
       console.error('Failed to batch import vocabularies:', error)
       ElMessage.error('批量导入失败：' + (error.response?.data?.error || error.message))
     }
+  } finally {
+    vocabularyBatchImportLoading.value = false
   }
 }
 

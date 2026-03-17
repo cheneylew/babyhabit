@@ -37,7 +37,23 @@
           </div>
           <div class="word-example" v-if="currentWord.example_sentence">
             <h4>例句：</h4>
-            <p>{{ currentWord.example_sentence }}</p>
+            <div v-if="typeof currentWord.example_sentence === 'string'">
+              <div v-if="isJsonString(currentWord.example_sentence)">
+                <div v-for="(example, index) in parseJson(currentWord.example_sentence)" :key="index" class="example-item">
+                  <p class="example-english">{{ example.english }} <el-button type="primary" size="small" @click="playExampleAudio(example.english)">播放</el-button></p>
+                  <p class="example-chinese">{{ example.chinese }}</p>
+                </div>
+              </div>
+              <div v-else>
+                <p>{{ currentWord.example_sentence }}</p>
+              </div>
+            </div>
+            <div v-else-if="Array.isArray(currentWord.example_sentence)">
+              <div v-for="(example, index) in currentWord.example_sentence" :key="index" class="example-item">
+                <p class="example-english">{{ example.english }} <el-button type="primary" size="small" @click="playExampleAudio(example.english)">播放</el-button></p>
+                <p class="example-chinese">{{ example.chinese }}</p>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -113,6 +129,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../store/user'
+import { ElMessage } from 'element-plus'
 import api from '../api'
 
 const router = useRouter()
@@ -192,6 +209,17 @@ const loadNextWord = async (words) => {
   
   // 生成选项
   await generateAnswerOptions()
+  
+  // 自动播放发音三遍
+  setTimeout(() => {
+    playAudio()
+    setTimeout(() => {
+      playAudio()
+      setTimeout(() => {
+        playAudio()
+      }, 2000)
+    }, 2000)
+  }, 500)
 }
 
 // 生成答案选项
@@ -201,6 +229,13 @@ const generateAnswerOptions = async () => {
       params: { wordId: currentWord.value.id, type: currentCheckType.value }
     })
     answerOptions.value = response.data.options
+    
+    // 设置正确答案
+    if (currentCheckType.value === 'chineseToEnglish' || currentCheckType.value === 'listening') {
+      correctAnswer.value = currentWord.value.english
+    } else if (currentCheckType.value === 'englishToChinese') {
+      correctAnswer.value = currentWord.value.chinese
+    }
   } catch (error) {
     console.error('Failed to generate options:', error)
   }
@@ -252,6 +287,71 @@ const playAudio = () => {
     audio.onended = () => {
       isPlaying.value = false
     }
+  }
+}
+
+// 播放例句音频
+const playExampleAudio = async (sentence) => {
+  console.log('playExampleAudio called with sentence:', sentence)
+  try {
+    // 直接调用后端API，让后端处理文件存在性检查和生成
+    console.log('Calling API to generate or get audio...')
+    const response = await api.post('/vocabulary/generate-sentence-audio', {
+      sentence: sentence
+    })
+    console.log('API response:', response)
+    
+    if (response.data.audio_url) {
+      // 播放生成的音频
+      console.log('Playing audio...')
+      const audio = new Audio(response.data.audio_url)
+      audio.play()
+      console.log('Audio played successfully')
+    } else {
+      console.error('API returned no audio_url')
+      ElMessage.error('生成音频失败：没有返回音频URL')
+    }
+  } catch (apiError) {
+    console.error('API request failed:', apiError)
+    ElMessage.error('调用API失败：' + (apiError.message || '未知错误'))
+  }
+}
+
+// 检查音频文件是否存在
+const checkAudioFileExists = async (url) => {
+  try {
+    const response = await fetch(url, { method: 'HEAD' })
+    return response.ok
+  } catch (error) {
+    return false
+  }
+}
+
+// 计算SHA-256哈希值
+const calculateMD5 = async (text) => {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(text)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+// 检查字符串是否为JSON格式
+const isJsonString = (str) => {
+  try {
+    JSON.parse(str)
+    return true
+  } catch (error) {
+    return false
+  }
+}
+
+// 解析JSON字符串
+const parseJson = (str) => {
+  try {
+    return JSON.parse(str)
+  } catch (error) {
+    return []
   }
 }
 

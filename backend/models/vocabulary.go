@@ -2,6 +2,9 @@ package models
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"babyhabit/config"
@@ -86,8 +89,11 @@ func GetNewVocabularies(userID int64, limit int) ([]*Vocabulary, error) {
 	`
 	rows, err := config.DB.Query(query, userID, limit)
 	if err != nil {
+		fmt.Printf("Error querying new vocabularies: %v\n", err)
 		return nil, err
 	}
+	fmt.Printf("Query: %s\n", query)
+	fmt.Printf("UserID: %d, Limit: %d\n", userID, limit)
 	defer rows.Close()
 
 	var vocabularies []*Vocabulary
@@ -532,6 +538,15 @@ func DeleteVocabulary(id int) error {
 		}
 	}()
 
+	// 查询词汇的音频URL
+	var audioURL *string
+	err = tx.QueryRow("SELECT audio_url FROM ab_vocabulary WHERE id = ?", id).Scan(&audioURL)
+	if err == nil && audioURL != nil && *audioURL != "" {
+		// 提取文件名并删除文件
+		filePath := filepath.Join("files", "words", filepath.Base(*audioURL))
+		os.Remove(filePath)
+	}
+
 	// 删除相关的学习记录
 	_, err = tx.Exec("DELETE FROM ab_learning_record WHERE vocabulary_id = ?", id)
 	if err != nil {
@@ -592,14 +607,39 @@ func BatchDeleteVocabulary(ids []int) error {
 		}
 	}()
 
+	// 为IN子句生成占位符
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	// 查询所有要删除的词汇的音频URL
+	query := "SELECT audio_url FROM ab_vocabulary WHERE id IN (" + strings.Join(placeholders, ",") + ")"
+	rows, err := tx.Query(query, args...)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var audioURL *string
+			if err := rows.Scan(&audioURL); err == nil && audioURL != nil && *audioURL != "" {
+				// 提取文件名并删除文件
+				filePath := filepath.Join("files", "words", filepath.Base(*audioURL))
+				os.Remove(filePath)
+			}
+		}
+	}
+
 	// 删除相关的学习记录
-	_, err = tx.Exec("DELETE FROM ab_learning_record WHERE vocabulary_id IN (?) ", ids)
+	query = "DELETE FROM ab_learning_record WHERE vocabulary_id IN (" + strings.Join(placeholders, ",") + ")"
+	_, err = tx.Exec(query, args...)
 	if err != nil {
 		return err
 	}
 
 	// 删除词汇
-	_, err = tx.Exec("DELETE FROM ab_vocabulary WHERE id IN (?) ", ids)
+	query = "DELETE FROM ab_vocabulary WHERE id IN (" + strings.Join(placeholders, ",") + ")"
+	_, err = tx.Exec(query, args...)
 	if err != nil {
 		return err
 	}

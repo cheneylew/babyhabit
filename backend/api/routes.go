@@ -82,6 +82,8 @@ func SetupRoutes(router *gin.Engine) {
 		auth.GET("/vocabulary/options", controllers.GetVocabularyOptions)
 		auth.POST("/vocabulary/record", controllers.RecordVocabularyLearning)
 		auth.GET("/vocabulary/stats", controllers.GetVocabularyStats)
+		// 生成例句音频
+		auth.POST("/vocabulary/generate-sentence-audio", controllers.GenerateSentenceAudio)
 	}
 
 	// 管理员路由
