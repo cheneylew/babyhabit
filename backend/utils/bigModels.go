@@ -551,3 +551,69 @@ func GenerateWordInfo(word string) (*WordInfo, error) {
 
 	return &wordInfo, nil
 }
+
+// GetWordMeaning 获取单词的中文意思
+func GetWordMeaning(word string) (string, error) {
+	// 从环境变量获取配置
+	apiKey := os.Getenv("TEXT_API_KEY")
+	modelID := os.Getenv("TEXT_MODEL_ID")
+	if apiKey == "" || modelID == "" {
+		return "", fmt.Errorf("TEXT_API_KEY or TEXT_MODEL_ID not set")
+	}
+
+	// 准备请求数据
+	prompt := fmt.Sprintf("请提供单词 '%s' 的中文意思，只返回美式发音+中文翻译(意思全面)，不要包含任何其他解释或文本。", word)
+	reqData := TextGenerationRequest{
+		Model: modelID,
+	}
+	reqData.Messages = append(reqData.Messages, struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}{Role: "user", Content: prompt})
+	reqData.Parameters.MaxTokens = 100
+	reqData.Parameters.Temperature = 0.7
+
+	data, err := json.Marshal(reqData)
+	if err != nil {
+		return "", err
+	}
+
+	// 发送请求
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequest("POST", "https://ark.cn-beijing.volces.com/api/v3/chat/completions", bytes.NewBuffer(data))
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API request failed: %s", string(body))
+	}
+
+	// 解析响应
+	var respData struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&respData); err != nil {
+		return "", err
+	}
+
+	if len(respData.Choices) == 0 {
+		return "", fmt.Errorf("no response from model")
+	}
+
+	return respData.Choices[0].Message.Content, nil
+}

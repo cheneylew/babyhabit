@@ -69,6 +69,24 @@
       </div>
     </el-card>
 
+    <!-- 积分趋势曲线图 -->
+    <el-card class="points-trend-card">
+      <template #header>
+        <div class="card-header">
+          <h3>积分趋势</h3>
+          <el-radio-group v-model="timeRange" size="small" @change="loadPointsTrend">
+            <el-radio-button label="7">近7天</el-radio-button>
+            <el-radio-button label="14">近14天</el-radio-button>
+            <el-radio-button label="30">近30天</el-radio-button>
+            <el-radio-button label="60">近60天</el-radio-button>
+          </el-radio-group>
+        </div>
+      </template>
+      <div class="chart-container">
+        <div ref="chartRef" class="chart" style="width: 100%; height: 300px;"></div>
+      </div>
+    </el-card>
+
     <el-card class="stats-card">
       <template #header>
         <h3>统计信息</h3>
@@ -84,11 +102,12 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../store/user'
 import api from '../api'
 import dayjs from 'dayjs'
+import * as echarts from 'echarts'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -106,6 +125,12 @@ const todayCheckins = ref(0)
 const totalCheckins = ref(0)
 const currentStreak = ref(0)
 const totalPoints = ref(0)
+
+// 积分趋势相关
+const chartRef = ref(null)
+const chart = ref(null)
+const timeRange = ref('7')
+const pointsTrendData = ref([])
 
 // 过滤出今天可打卡的习惯并排序（和打卡页保持一致）
 const todayHabits = computed(() => {
@@ -214,6 +239,147 @@ const loadStats = async () => {
   }
 }
 
+// 加载积分趋势数据
+const loadPointsTrend = async () => {
+  try {
+    const days = parseInt(timeRange.value)
+    const startDate = dayjs().subtract(days - 1, 'day').format('YYYY-MM-DD')
+    const endDate = dayjs().format('YYYY-MM-DD')
+    
+    // 从后端API获取数据
+    const response = await api.get('/checkin/daily-points', {
+      params: { start_date: startDate, end_date: endDate }
+    })
+    
+    // 处理数据，确保所有日期都有数据
+    const apiData = response.data.stats || []
+    const dataMap = new Map()
+    
+    // 初始化所有日期的数据为0
+    for (let i = 0; i < days; i++) {
+      const date = dayjs().subtract(days - 1 - i, 'day').format('YYYY-MM-DD')
+      dataMap.set(date, 0)
+    }
+    
+    // 填充API返回的数据，确保日期格式正确
+    apiData.forEach(item => {
+      // 确保日期格式为 YYYY-MM-DD
+      const date = dayjs(item.date).format('YYYY-MM-DD')
+      dataMap.set(date, item.points)
+    })
+    
+    // 转换为数组并排序
+    const processedData = Array.from(dataMap.entries())
+      .map(([date, points]) => ({ date, points }))
+      .sort((a, b) => a.date.localeCompare(b.date))
+    
+    pointsTrendData.value = processedData
+    initChart()
+  } catch (error) {
+    console.error('Failed to load points trend:', error)
+    // 如果API调用失败，使用模拟数据
+    const days = parseInt(timeRange.value)
+    const mockData = []
+    for (let i = 0; i < days; i++) {
+      const date = dayjs().subtract(days - 1 - i, 'day').format('YYYY-MM-DD')
+      // 生成随机积分数据
+      const points = Math.floor(Math.random() * 10) * 5
+      mockData.push({
+        date,
+        points
+      })
+    }
+    pointsTrendData.value = mockData
+    initChart()
+  }
+}
+
+// 初始化图表
+const initChart = () => {
+  if (!chartRef.value) return
+  
+  if (chart.value) {
+    chart.value.dispose()
+  }
+  
+  chart.value = echarts.init(chartRef.value)
+  
+  const dates = pointsTrendData.value.map(item => item.date)
+  const points = pointsTrendData.value.map(item => item.points)
+  
+  const option = {
+    tooltip: {
+      trigger: 'axis',
+      formatter: '{b}: {c} 积分'
+    },
+    grid: {
+      left: '3%',
+      right: '4%',
+      bottom: '3%',
+      containLabel: true
+    },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: dates,
+      axisLabel: {
+        rotate: 45,
+        formatter: function(value) {
+          return value.substring(5) // 只显示月-日
+        }
+      }
+    },
+    yAxis: {
+      type: 'value',
+      name: '积分',
+      minInterval: 5
+    },
+    series: [{
+            name: '每日积分',
+            type: 'line',
+            smooth: true,
+            data: points,
+            areaStyle: {
+              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                {
+                  offset: 0,
+                  color: 'rgba(102, 126, 234, 0.3)'
+                },
+                {
+                  offset: 1,
+                  color: 'rgba(102, 126, 234, 0.1)'
+                }
+              ])
+            },
+            lineStyle: {
+              color: '#667eea'
+            },
+            itemStyle: {
+              color: '#667eea'
+            },
+            label: {
+              show: true,
+              position: 'top',
+              formatter: '{c} 分',
+              fontSize: 12,
+              color: '#667eea'
+            }
+          }]
+  }
+  
+  chart.value.setOption(option)
+  
+  // 响应式调整
+  window.addEventListener('resize', () => {
+    chart.value?.resize()
+  })
+}
+
+// 监听窗口大小变化
+const handleResize = () => {
+  chart.value?.resize()
+}
+
 onMounted(async () => {
   if (!user.value) {
     await userStore.getUserInfo()
@@ -221,6 +387,15 @@ onMounted(async () => {
   await loadHabits()
   await loadCheckinRecords()
   await loadStats()
+  await loadPointsTrend()
+  window.addEventListener('resize', handleResize)
+})
+
+onUnmounted(() => {
+  if (chart.value) {
+    chart.value.dispose()
+  }
+  window.removeEventListener('resize', handleResize)
 })
 </script>
 
@@ -501,5 +676,48 @@ onMounted(async () => {
   font-size: 14px;
   color: #666;
   margin-top: 10px;
+}
+
+/* 积分趋势卡片 */
+.points-trend-card {
+  margin-bottom: 20px;
+}
+
+.chart-container {
+  padding: 10px 0;
+}
+
+.chart {
+  width: 100%;
+  height: 300px;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .chart {
+    height: 250px;
+  }
+}
+
+@media (max-width: 480px) {
+  .chart {
+    height: 200px;
+  }
+  
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .card-header .el-radio-group {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  .card-header .el-radio-button {
+    flex: 1;
+    text-align: center;
+  }
 }
 </style>

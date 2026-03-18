@@ -608,12 +608,16 @@
           <p class="import-example">Suspicion|word</p>
         </el-form-item>
         <el-form-item label="词汇内容">
-          <el-input type="textarea" :rows="10" v-model="vocabularyBatchImportContent" placeholder="请输入要导入的词汇，每行一条" />
+          <el-input type="textarea" :rows="10" v-model="vocabularyBatchImportContent" placeholder="请输入要导入的词汇，每行一条" :disabled="vocabularyBatchImportLoading" />
+        </el-form-item>
+        <el-form-item v-if="vocabularyBatchImportLoading">
+          <el-progress :percentage="vocabularyImportProgress" :format="formatProgress" />
+          <p class="import-progress-text">{{ vocabularyImportCurrentWord }} - {{ vocabularyImportStatus }}</p>
         </el-form-item>
       </el-form>
       <template #footer>
         <span class="dialog-footer">
-          <el-button @click="vocabularyBatchImportDialogVisible = false" :disabled="vocabularyBatchImportLoading">取消</el-button>
+          <el-button @click="cancelVocabularyBatchImport" :disabled="vocabularyBatchImportLoading">取消</el-button>
           <el-button type="primary" @click="saveVocabularyBatchImport" :loading="vocabularyBatchImportLoading">导入</el-button>
         </span>
       </template>
@@ -802,6 +806,10 @@ const selectedVocabularies = ref([])
 const vocabularyBatchImportContent = ref('')
 const vocabularyLoading = ref(false)
 const vocabularyBatchImportLoading = ref(false)
+const vocabularyImportProgress = ref(0)
+const vocabularyImportCurrentWord = ref('')
+const vocabularyImportStatus = ref('')
+const vocabularyImportAbort = ref(false)
 
 // 加载名言警句列表
 const loadQuotes = async () => {
@@ -1144,7 +1152,22 @@ const batchDeleteVocabularies = async () => {
   }
 }
 
-// 批量导入词汇
+// 格式化进度显示
+const formatProgress = (percentage) => {
+  return `${percentage}%`
+}
+
+// 取消词汇批量导入
+const cancelVocabularyBatchImport = () => {
+  vocabularyImportAbort.value = true
+  vocabularyBatchImportDialogVisible.value = false
+  vocabularyBatchImportLoading.value = false
+  vocabularyImportProgress.value = 0
+  vocabularyImportCurrentWord.value = ''
+  vocabularyImportStatus.value = ''
+}
+
+// 批量导入词汇（逐个导入）
 const saveVocabularyBatchImport = async () => {
   if (!vocabularyBatchImportContent.value.trim()) {
     ElMessage.warning('请输入要导入的词汇内容')
@@ -1161,8 +1184,6 @@ const saveVocabularyBatchImport = async () => {
         type: 'info',
       }
     )
-
-    vocabularyBatchImportLoading.value = true
 
     // 解析导入内容
     const lines = vocabularyBatchImportContent.value.trim().split('\n')
@@ -1190,18 +1211,68 @@ const saveVocabularyBatchImport = async () => {
       return
     }
 
-    await api.post('/admin/vocabulary/batch', { vocabularies })
-    ElMessage.success(`成功导入 ${vocabularies.length} 个词汇`)
-    vocabularyBatchImportDialogVisible.value = false
-    vocabularyBatchImportContent.value = ''
-    await loadVocabularies()
+    vocabularyBatchImportLoading.value = true
+    vocabularyImportProgress.value = 0
+    vocabularyImportCurrentWord.value = ''
+    vocabularyImportStatus.value = ''
+    vocabularyImportAbort.value = false
+
+    let successCount = 0
+    let errorCount = 0
+
+    // 逐个导入词汇
+    for (let i = 0; i < vocabularies.length; i++) {
+      if (vocabularyImportAbort.value) {
+        break
+      }
+
+      const vocab = vocabularies[i]
+      vocabularyImportCurrentWord.value = vocab.english
+      vocabularyImportStatus.value = '导入中...'
+      vocabularyImportProgress.value = Math.round((i / vocabularies.length) * 100)
+
+      try {
+        // 调用创建词汇的API
+        await api.post('/admin/vocabulary', vocab)
+        successCount++
+        vocabularyImportStatus.value = '导入成功'
+      } catch (error) {
+        errorCount++
+        vocabularyImportStatus.value = '导入失败'
+        console.error(`Failed to import vocabulary ${vocab.english}:`, error)
+      }
+
+      // 短暂延迟，避免请求过于频繁
+      await new Promise(resolve => setTimeout(resolve, 500))
+    }
+
+    // 更新最终进度
+    vocabularyImportProgress.value = 100
+    vocabularyImportStatus.value = '导入完成'
+
+    // 显示导入结果
+    ElMessage.success(`导入完成：成功 ${successCount} 个，失败 ${errorCount} 个`)
+
+    // 关闭对话框并重置状态
+    setTimeout(() => {
+      vocabularyBatchImportDialogVisible.value = false
+      vocabularyBatchImportContent.value = ''
+      vocabularyBatchImportLoading.value = false
+      vocabularyImportProgress.value = 0
+      vocabularyImportCurrentWord.value = ''
+      vocabularyImportStatus.value = ''
+      // 重新加载词汇列表
+      loadVocabularies()
+    }, 1000)
   } catch (error) {
     if (error !== 'cancel') {
-      console.error('Failed to batch import vocabularies:', error)
+      console.error('Failed to batch import vocabulary:', error)
       ElMessage.error('批量导入失败：' + (error.response?.data?.error || error.message))
+      vocabularyBatchImportLoading.value = false
+      vocabularyImportProgress.value = 0
+      vocabularyImportCurrentWord.value = ''
+      vocabularyImportStatus.value = ''
     }
-  } finally {
-    vocabularyBatchImportLoading.value = false
   }
 }
 

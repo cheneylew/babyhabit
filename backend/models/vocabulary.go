@@ -275,6 +275,15 @@ func GetLearningStats(userID int64) (map[string]interface{}, error) {
 	}
 	stats["masteredWords"] = masteredWords
 
+	// 今日学习单词数
+	var todayLearnedWords int
+	query = `SELECT COUNT(*) FROM ab_learning_record WHERE user_id = ? AND DATE(create_time) = CURRENT_DATE`
+	err = config.DB.QueryRow(query, userID).Scan(&todayLearnedWords)
+	if err != nil {
+		todayLearnedWords = 0
+	}
+	stats["todayLearnedWords"] = todayLearnedWords
+
 	// 连续学习天数
 	var learningStreak int
 	query = `

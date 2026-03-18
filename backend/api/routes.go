@@ -63,6 +63,7 @@ func SetupRoutes(router *gin.Engine) {
 		auth.GET("/checkin/records", controllers.GetCheckinRecords)
 		auth.GET("/checkin/streak/:habit_id", controllers.GetStreakRecord)
 		auth.POST("/checkin/submit-rate", controllers.SubmitSelfRate)
+		auth.GET("/checkin/daily-points", controllers.GetDailyPointsStats)
 
 		// 打卡回退（管理员）
 		auth.POST("/admin/checkin/rollback", controllers.RollbackCheckin)
@@ -84,6 +85,8 @@ func SetupRoutes(router *gin.Engine) {
 		auth.GET("/vocabulary/stats", controllers.GetVocabularyStats)
 		// 生成例句音频
 		auth.POST("/vocabulary/generate-sentence-audio", controllers.GenerateSentenceAudio)
+		// 获取单词意思
+		auth.POST("/vocabulary/get-word-meaning", controllers.GetWordMeaning)
 	}
 
 	// 管理员路由

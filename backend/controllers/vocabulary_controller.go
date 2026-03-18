@@ -89,12 +89,6 @@ func StartVocabularyLearning(c *gin.Context) {
 
 	// 处理新单词
 	for _, word := range newWords {
-		// 创建学习记录
-		err := models.CreateLearningRecord(userID, word.ID)
-		if err != nil {
-			continue
-		}
-
 		audioURL := ""
 		if word.AudioURL != nil && *word.AudioURL != "" {
 			// 检查是否已经是完整的URL
@@ -203,6 +197,7 @@ func RecordVocabularyLearning(c *gin.Context) {
 
 	// 获取或创建学习记录
 	record, err := models.GetLearningRecordByUserAndVocab(userID, request.WordID)
+	isNewRecord := false
 	if err != nil {
 		// 记录不存在，创建新记录
 		err = models.CreateLearningRecord(userID, request.WordID)
@@ -217,6 +212,7 @@ func RecordVocabularyLearning(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取学习记录失败"})
 			return
 		}
+		isNewRecord = true
 	}
 
 	// 更新学习记录
@@ -224,6 +220,28 @@ func RecordVocabularyLearning(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新学习记录失败"})
 		return
+	}
+
+	// 创建或更新学习打卡记录
+	newWordsCount := 0
+	if isNewRecord {
+		newWordsCount = 1
+	}
+	reviewWordsCount := 0
+	if !isNewRecord {
+		reviewWordsCount = 1
+	}
+	correctCount := 0
+	if request.IsCorrect {
+		correctCount = 1
+	}
+	totalCount := 1
+	durationMinutes := 1 // 假设每次学习单词花费1分钟
+
+	err = models.CreateStudyCheckin(userID, newWordsCount, reviewWordsCount, correctCount, totalCount, durationMinutes)
+	if err != nil {
+		// 记录打卡失败不影响学习记录的更新
+		fmt.Println("创建学习打卡记录失败:", err)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -591,4 +609,31 @@ func GenerateSentenceAudio(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"audio_url": fullAudioURL,
 	})
+}
+
+// GetWordMeaning 获取单词的中文意思
+func GetWordMeaning(c *gin.Context) {
+	var request struct {
+		Word string `json:"word"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求参数"})
+		return
+	}
+
+	if request.Word == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "单词不能为空"})
+		return
+	}
+
+	// 使用大模型API查询单词意思
+	meaning, err := utils.GetWordMeaning(request.Word)
+	if err != nil {
+		fmt.Printf("Error getting word meaning: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询单词意思失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"meaning": meaning})
 }

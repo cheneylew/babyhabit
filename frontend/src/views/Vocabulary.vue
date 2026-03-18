@@ -23,34 +23,45 @@
       title="单词学习"
       width="80%"
       :close-on-click-modal="false"
+      @close="closeLearning"
     >
       <div v-if="currentWord" class="word-card">
         <div class="word-info">
-          <h3 class="word-english">{{ currentWord.english }}</h3>
-          <p class="word-phonetic">{{ currentWord.phonetic }}</p>
-          <p class="word-chinese">{{ currentWord.chinese }}</p>
-          <div class="word-audio">
-            <el-button type="info" @click="playAudio" :loading="isPlaying">
-              <el-icon><i-ep-audio /></el-icon>
-              播放发音
+          <h3 class="word-english" v-show="learningMode !== 'chinese'">{{ currentWord.english }}</h3>
+          <div style="display: flex; align-items: center; gap: 10px;" v-show="learningMode !== 'chinese'">
+            <p class="word-phonetic" style="margin: 0;">{{ formatPhonetic(currentWord.phonetic) }}</p>
+            <el-button type="info" size="small" @click="playAudio" :loading="isPlaying" style="margin: 0;">
+              播放
             </el-button>
           </div>
-          <div class="word-example" v-if="currentWord.example_sentence">
+          <p class="word-chinese" v-show="learningMode !== 'english'">{{ currentWord.chinese }}</p>
+          <div class="word-audio">
+            <el-button size="small" :type="learningMode === 'normal' ? 'primary' : ''" @click="learningMode = 'normal'">正常</el-button>
+            <el-button size="small" :type="learningMode === 'english' ? 'primary' : ''" @click="learningMode = 'english'">默英文</el-button>
+            <el-button size="small" :type="learningMode === 'chinese' ? 'primary' : ''" @click="learningMode = 'chinese'">默中文</el-button>
+          </div>
+          <div class="word-example" v-if="currentWord.example_sentence && learningMode === 'normal'">
             <h4>例句：</h4>
             <div v-if="typeof currentWord.example_sentence === 'string'">
               <div v-if="isJsonString(currentWord.example_sentence)">
                 <div v-for="(example, index) in parseJson(currentWord.example_sentence)" :key="index" class="example-item">
-                  <p class="example-english">{{ example.english }} <el-button type="primary" size="small" @click="playExampleAudio(example.english)">播放</el-button></p>
+                  <div class="example-english-container">
+                    <span v-html="processSentenceWords(highlightWordInSentence(example.english, currentWord.english))"></span>
+                    <el-button type="primary" size="small" @click="playExampleAudio(example.english)">播放</el-button>
+                  </div>
                   <p class="example-chinese">{{ example.chinese }}</p>
                 </div>
               </div>
               <div v-else>
-                <p>{{ currentWord.example_sentence }}</p>
+                <p v-html="highlightWordInSentence(currentWord.example_sentence, currentWord.english)"></p>
               </div>
             </div>
             <div v-else-if="Array.isArray(currentWord.example_sentence)">
               <div v-for="(example, index) in currentWord.example_sentence" :key="index" class="example-item">
-                <p class="example-english">{{ example.english }} <el-button type="primary" size="small" @click="playExampleAudio(example.english)">播放</el-button></p>
+                <div class="example-english-container">
+                  <span v-html="processSentenceWords(highlightWordInSentence(example.english, currentWord.english))"></span>
+                  <el-button type="primary" size="small" @click="playExampleAudio(example.english)">播放</el-button>
+                </div>
                 <p class="example-chinese">{{ example.chinese }}</p>
               </div>
             </div>
@@ -104,8 +115,11 @@
           <el-button v-else-if="!showFeedback" type="primary" @click="submitAnswer">
             提交答案
           </el-button>
-          <el-button v-else type="primary" @click="nextWord">
+          <el-button v-else-if="isCorrect" type="primary" @click="nextWord">
             下一个
+          </el-button>
+          <el-button v-else type="warning" @click="nextWord">
+            重新尝试
           </el-button>
         </span>
       </template>
@@ -117,19 +131,42 @@
       </template>
       <div class="stats-grid">
         <el-statistic :value="totalWords" title="累计学习" />
+        <el-statistic :value="todayLearnedWords" title="今日学习" />
         <el-statistic :value="masteredWords" title="已掌握" />
         <el-statistic :value="learningStreak" title="连续学习" />
-        <el-statistic :value="accuracyRate + '%'" title="正确率" />
+        <el-statistic :value="accuracyRate" title="正确率" :formatter="(value) => value + '%'" />
       </div>
     </el-card>
+
+    <!-- 单词意思对话框 -->
+    <el-dialog
+      v-model="wordMeaningDialogVisible"
+      title="单词意思"
+      width="50%"
+      :close-on-click-modal="false"
+    >
+      <div v-loading="isLoading">
+        <h3>{{ currentWordForMeaning }}</h3>
+        <p>{{ currentWordMeaning }}</p>
+      </div>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="playExampleAudio(currentWordForMeaning)">
+            <el-icon><i-ep-audio /></el-icon>
+            播放发音
+          </el-button>
+          <el-button type="primary" @click="closeWordMeaningDialog">我知道了</el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../store/user'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
 import api from '../api'
 
 const router = useRouter()
@@ -142,6 +179,7 @@ const totalWords = ref(0)
 const masteredWords = ref(0)
 const learningStreak = ref(0)
 const accuracyRate = ref(0)
+const todayLearnedWords = ref(0)
 
 // 学习状态
 const isLearning = ref(false)
@@ -156,6 +194,9 @@ const showFeedback = ref(false)
 const isCorrect = ref(false)
 const isPlaying = ref(false)
 
+// 学习模式：normal (正常), english (默英文), chinese (默中文)
+const learningMode = ref('normal')
+
 // 加载今日学习计划
 const loadTodayPlan = async () => {
   try {
@@ -165,6 +206,7 @@ const loadTodayPlan = async () => {
     masteredWords.value = response.data.stats.masteredWords
     learningStreak.value = response.data.stats.learningStreak
     accuracyRate.value = response.data.stats.accuracyRate
+    todayLearnedWords.value = response.data.stats.todayLearnedWords || 0
   } catch (error) {
     console.error('Failed to load learning plan:', error)
   }
@@ -174,11 +216,13 @@ const loadTodayPlan = async () => {
 const startLearning = async () => {
   try {
     const response = await api.get('/vocabulary/start')
-    if (response.data.words.length === 0) {
+    if (!response.data.words || response.data.words.length === 0) {
       ElMessage.info('今天没有需要学习的单词')
       return
     }
     
+    // 恢复到正常模式
+    learningMode.value = 'normal'
     isLearning.value = true
     learningDialogVisible.value = true
     currentStage.value = 'recognition'
@@ -195,7 +239,7 @@ const startLearning = async () => {
 
 // 加载下一个单词
 const loadNextWord = async (words) => {
-  if (words.length === 0) {
+  if (!words || words.length === 0) {
     ElMessage.success('今日学习完成！')
     closeLearning()
     await loadTodayPlan()
@@ -214,9 +258,9 @@ const loadNextWord = async (words) => {
   setTimeout(() => {
     playAudio()
     setTimeout(() => {
-      playAudio()
+      // playAudio()
       setTimeout(() => {
-        playAudio()
+        // playAudio()
       }, 2000)
     }, 2000)
   }, 500)
@@ -260,22 +304,38 @@ const submitAnswer = async () => {
   isCorrect.value = userAnswer.value === correctAnswer.value
   showFeedback.value = true
   
-  // 记录学习结果
-  try {
-    await api.post('/vocabulary/record', {
-      wordId: currentWord.value.id,
-      isCorrect: isCorrect.value,
-      checkType: currentCheckType.value
-    })
-  } catch (error) {
-    console.error('Failed to record learning result:', error)
+  // 只有当记忆检测通过后，才记录学习结果
+  if (isCorrect.value) {
+    try {
+      await api.post('/vocabulary/record', {
+        wordId: currentWord.value.id,
+        isCorrect: isCorrect.value,
+        checkType: currentCheckType.value
+      })
+    } catch (error) {
+      console.error('Failed to record learning result:', error)
+    }
   }
 }
 
 // 下一个单词
 const nextWord = async () => {
-  // 继续加载下一个单词
-  await startLearning()
+  // 只有当记忆检测通过后，才继续加载下一个单词
+  if (isCorrect.value) {
+    // 恢复到正常模式
+    learningMode.value = 'normal'
+    // 继续加载下一个单词
+    await startLearning()
+  } else {
+    // 记忆检测失败，重新开始当前单词的记忆检测
+    currentStage.value = 'memory'
+    // 随机选择检测类型
+    const checkTypes = ['chineseToEnglish', 'englishToChinese', 'listening']
+    currentCheckType.value = checkTypes[Math.floor(Math.random() * checkTypes.length)]
+    generateAnswerOptions()
+    showFeedback.value = false
+    userAnswer.value = ''
+  }
 }
 
 // 播放发音
@@ -355,6 +415,114 @@ const parseJson = (str) => {
   }
 }
 
+// 处理音标显示
+const formatPhonetic = (phonetic) => {
+  if (!phonetic) return ''
+  try {
+    const phoneticObj = JSON.parse(phonetic)
+    if (phoneticObj.uk && phoneticObj.us) {
+      return `英式: ${phoneticObj.uk} / 美式: ${phoneticObj.us}`
+    } else if (phoneticObj.uk) {
+      return `英式: ${phoneticObj.uk}`
+    } else if (phoneticObj.us) {
+      return `美式: ${phoneticObj.us}`
+    }
+  } catch (error) {
+    // 如果不是JSON格式，直接返回
+    return phonetic
+  }
+  return phonetic
+}
+
+// 高亮例句中的单词
+const highlightWordInSentence = (sentence, word) => {
+  if (!sentence || !word) return sentence
+  console.log('highlightWordInSentence called with:', { sentence, word })
+  const regex = new RegExp(`\\b${word}\\b`, 'gi')
+  // 使用内联样式确保高亮效果
+  const result = sentence.replace(regex, '<span class="highlight-word" style="background-color: #ff4d4f; color: white; padding: 0 4px; border-radius: 4px; font-weight: bold; display: inline;">$&</span>')
+  console.log('highlightWordInSentence result:', result)
+  return result
+}
+
+// 为例句中的所有单词添加点击事件
+const processSentenceWords = (sentence) => {
+  if (!sentence) return sentence
+  
+  // 处理已经高亮的单词，为其添加点击事件
+  let processedSentence = sentence.replace(/(<span class="highlight-word"[^>]*>)([^<]+)(<\/span>)/g, (match, openTag, word, closeTag) => {
+    // 在highlight-word的span标签上直接添加点击事件属性
+    const newOpenTag = openTag.replace('class="highlight-word"', 'class="highlight-word clickable-word"').replace('style="', 'data-word="' + word + '" style="cursor: pointer;')
+    return `${newOpenTag}${word}${closeTag}`
+  })
+  
+  // 对非HTML标签部分的单词添加点击事件
+  // 使用正则表达式，避免对HTML标签的误处理
+  // 匹配HTML标签和纯文本部分
+  return processedSentence.replace(/(<[^>]+>)|(\b\w+\b)/g, (match, tag, word) => {
+    // 如果是HTML标签，直接返回
+    if (tag) {
+      return tag
+    }
+    // 如果是单词，并且不是已经处理过的（不在highlight-word标签内）
+    if (word && !match.includes('clickable-word') && !match.includes('highlight-word')) {
+      return `<span class="clickable-word" data-word="${word}" style="cursor: pointer; text-decoration: underline;">${word}</span>`
+    }
+    return match
+  })
+}
+
+// 加载状态
+const isLoading = ref(false)
+
+// 单词意思对话框
+const wordMeaningDialogVisible = ref(false)
+const currentWordMeaning = ref('')
+const currentWordForMeaning = ref('')
+
+// 查询单词的中文意思
+const getWordMeaning = async (word) => {
+  let loadingInstance = null
+  try {
+    console.log('查询单词意思:', word)
+    // 显示全局loading动画
+    loadingInstance = ElLoading.service({
+      lock: true,
+      text: '查询单词意思中...',
+      background: 'rgba(0, 0, 0, 0.7)',
+    })
+    // 调用后端API查询单词意思
+    const response = await api.post('/vocabulary/get-word-meaning', {
+      word: word
+    })
+    if (response.data.meaning) {
+      // 显示单词意思对话框
+      currentWordForMeaning.value = word
+      currentWordMeaning.value = response.data.meaning
+      wordMeaningDialogVisible.value = true
+      // 自动播放单词发音
+      playExampleAudio(word)
+    } else {
+      ElMessage.error('查询单词意思失败')
+    }
+  } catch (error) {
+    console.error('查询单词意思失败:', error)
+    ElMessage.error('查询单词意思失败')
+  } finally {
+    // 关闭loading动画
+    if (loadingInstance) {
+      loadingInstance.close()
+    }
+  }
+}
+
+// 关闭单词意思对话框
+const closeWordMeaningDialog = () => {
+  wordMeaningDialogVisible.value = false
+  currentWordMeaning.value = ''
+  currentWordForMeaning.value = ''
+}
+
 // 关闭学习
 const closeLearning = () => {
   learningDialogVisible.value = false
@@ -362,11 +530,32 @@ const closeLearning = () => {
   currentWord.value = null
 }
 
+// 事件处理函数
+const handleWordClick = (event) => {
+  // 防止事件冒泡
+  event.stopPropagation()
+  const target = event.target
+  if (target.classList.contains('clickable-word')) {
+    const word = target.getAttribute('data-word')
+    if (word) {
+      getWordMeaning(word)
+    }
+  }
+}
+
 onMounted(async () => {
   if (!user.value) {
     await userStore.getUserInfo()
   }
   await loadTodayPlan()
+  
+  // 添加事件监听器，使用事件委托处理单词点击事件
+  document.addEventListener('click', handleWordClick)
+})
+
+onUnmounted(() => {
+  // 移除事件监听器，避免重复绑定
+  document.removeEventListener('click', handleWordClick)
 })
 </script>
 
@@ -397,6 +586,22 @@ onMounted(async () => {
 .header-stats {
   display: flex;
   gap: 30px;
+}
+
+.word-example .highlight-word {
+  background-color: #ff4d4f !important;
+  color: white !important;
+  padding: 0 4px !important;
+  border-radius: 4px !important;
+  font-weight: bold !important;
+  display: inline !important;
+}
+
+.example-english-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 5px;
 }
 
 .plan-summary {

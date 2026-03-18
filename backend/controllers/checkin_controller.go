@@ -268,3 +268,28 @@ func SubmitSelfRate(c *gin.Context) {
 		"self_rate": req.SelfRate,
 	})
 }
+
+// GetDailyPointsStats 获取用户每天的积分统计
+func GetDailyPointsStats(c *gin.Context) {
+	user := c.MustGet("user").(*models.User)
+
+	// 获取查询参数
+	startDate := c.Query("start_date")
+	endDate := c.Query("end_date")
+
+	if startDate == "" || endDate == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "start_date and end_date are required"})
+		return
+	}
+
+	// 获取每天的积分统计
+	stats, err := models.GetDailyPointsStats(user.ID, startDate, endDate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get daily points stats: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"stats": stats,
+	})
+}

@@ -344,3 +344,34 @@ func UpdateCheckinSelfRate(recordID int64, selfRate int) error {
 	_, err := config.DB.Exec(query, selfRate, recordID)
 	return err
 }
+
+// GetDailyPointsStats 获取用户每天的积分统计
+func GetDailyPointsStats(userID int64, startDate, endDate string) ([]map[string]interface{}, error) {
+	query := `SELECT DATE(checkin_date) as checkin_date, SUM(points_rewarded) as daily_points 
+			 FROM checkin_record 
+			 WHERE user_id = ? AND checkin_date BETWEEN ? AND ? AND is_rolled_back = 0 
+			 GROUP BY DATE(checkin_date) 
+			 ORDER BY checkin_date ASC`
+	
+	rows, err := config.DB.Query(query, userID, startDate, endDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	stats := []map[string]interface{}{}
+	for rows.Next() {
+		var date string
+		var points int
+		if err := rows.Scan(&date, &points); err != nil {
+			return nil, err
+		}
+		
+		stats = append(stats, map[string]interface{}{
+			"date":   date,
+			"points": points,
+		})
+	}
+	
+	return stats, nil
+}
