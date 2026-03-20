@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -212,6 +213,9 @@ func GenerateSpeech(word string) (string, error) {
 	// 生成单词的MD5哈希值
 	md5Hash := md5.Sum([]byte(word))
 	md5String := hex.EncodeToString(md5Hash[:])
+
+	// word可能是个句子，里面有空格，需要替换为下划线
+	word = strings.ReplaceAll(word, " ", "_")
 
 	// 生成文件名：单词+单词的MD5
 	fileName := fmt.Sprintf("%s_%s.mp3", word, md5String)
