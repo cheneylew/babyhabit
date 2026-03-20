@@ -19,8 +19,7 @@ type Vocabulary struct {
 	AudioURL        *string   `json:"audio_url"`
 	ExampleSentence *string   `json:"example_sentence"`
 	Type            string    `json:"type"`
-	Grade           *string   `json:"grade"`
-	Textbook        *string   `json:"textbook"`
+	BookID          *int      `json:"book_id"`
 	Category        *string   `json:"category"`
 	CreateTime      time.Time `json:"create_time"`
 }
@@ -56,13 +55,14 @@ type StudyCheckin struct {
 // GetVocabularyByID 根据ID获取词汇
 func GetVocabularyByID(id int) (*Vocabulary, error) {
 	var vocab Vocabulary
-	var phonetic, audioURL, exampleSentence, grade, textbook, category *string
-	query := `SELECT id, english, chinese, phonetic, audio_url, example_sentence, type, grade, textbook, category, create_time 
+	var phonetic, audioURL, exampleSentence, category *string
+	var bookID *int
+	query := `SELECT id, english, chinese, phonetic, audio_url, example_sentence, type, book_id, category, create_time 
 			FROM ab_vocabulary WHERE id = ?`
 	err := config.DB.QueryRow(query, id).Scan(
 		&vocab.ID, &vocab.English, &vocab.Chinese, &phonetic,
 		&audioURL, &exampleSentence, &vocab.Type,
-		&grade, &textbook, &category, &vocab.CreateTime,
+		&bookID, &category, &vocab.CreateTime,
 	)
 	if err != nil {
 		return nil, err
@@ -70,24 +70,41 @@ func GetVocabularyByID(id int) (*Vocabulary, error) {
 	vocab.Phonetic = phonetic
 	vocab.AudioURL = audioURL
 	vocab.ExampleSentence = exampleSentence
-	vocab.Grade = grade
-	vocab.Textbook = textbook
+	vocab.BookID = bookID
 	vocab.Category = category
 	return &vocab, nil
 }
 
 // GetNewVocabularies 获取新词汇（用户未学习过的）
-func GetNewVocabularies(userID int64, limit int) ([]*Vocabulary, error) {
+func GetNewVocabularies(userID int64, limit int, bookIDs []int) ([]*Vocabulary, error) {
 	query := `
 		SELECT v.id, v.english, v.chinese, v.phonetic, v.audio_url, v.example_sentence, 
-			   v.type, v.grade, v.textbook, v.category, v.create_time
+		   v.type, v.book_id, v.category, v.create_time
 		FROM ab_vocabulary v
 		WHERE NOT EXISTS (
 			SELECT 1 FROM ab_learning_record lr WHERE lr.user_id = ? AND lr.vocabulary_id = v.id
 		)
-		ORDER BY v.id LIMIT ?
 	`
-	rows, err := config.DB.Query(query, userID, limit)
+
+	// 添加教材ID过滤
+	args := []interface{}{userID}
+	if len(bookIDs) > 0 {
+		query += " AND v.book_id IN ("
+		for i, id := range bookIDs {
+			if i > 0 {
+				query += ","
+			}
+			query += "?"
+			args = append(args, id)
+		}
+		query += ")"
+	}
+
+	// 添加排序和LIMIT限制
+	query += " ORDER BY v.id LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := config.DB.Query(query, args...)
 	if err != nil {
 		fmt.Printf("Error querying new vocabularies: %v\n", err)
 		return nil, err
@@ -99,11 +116,12 @@ func GetNewVocabularies(userID int64, limit int) ([]*Vocabulary, error) {
 	var vocabularies []*Vocabulary
 	for rows.Next() {
 		var vocab Vocabulary
-		var phonetic, audioURL, exampleSentence, grade, textbook, category *string
+		var phonetic, audioURL, exampleSentence, category *string
+		var bookID *int
 		err := rows.Scan(
 			&vocab.ID, &vocab.English, &vocab.Chinese, &phonetic,
 			&audioURL, &exampleSentence, &vocab.Type,
-			&grade, &textbook, &category, &vocab.CreateTime,
+			&bookID, &category, &vocab.CreateTime,
 		)
 		if err != nil {
 			return nil, err
@@ -111,8 +129,7 @@ func GetNewVocabularies(userID int64, limit int) ([]*Vocabulary, error) {
 		vocab.Phonetic = phonetic
 		vocab.AudioURL = audioURL
 		vocab.ExampleSentence = exampleSentence
-		vocab.Grade = grade
-		vocab.Textbook = textbook
+		vocab.BookID = bookID
 		vocab.Category = category
 		vocabularies = append(vocabularies, &vocab)
 	}
@@ -120,20 +137,50 @@ func GetNewVocabularies(userID int64, limit int) ([]*Vocabulary, error) {
 	return vocabularies, nil
 }
 
+// GetTodayLearnedNewWordsCount 获取用户今天已经学习的新单词数量
+func GetTodayLearnedNewWordsCount(userID int64) (int, error) {
+	query := `
+		SELECT COUNT(*) 
+		FROM ab_learning_record 
+		WHERE user_id = ? AND DATE(create_time) = DATE(NOW())
+	`
+	var count int
+	err := config.DB.QueryRow(query, userID).Scan(&count)
+	if err != nil {
+		fmt.Printf("Error querying today learned new words: %v\n", err)
+		return 0, err
+	}
+	return count, nil
+}
+
 // GetDueReviewVocabularies 获取需要复习的词汇
-func GetDueReviewVocabularies(userID int64) ([]*LearningRecord, error) {
+func GetDueReviewVocabularies(userID int64, bookIDs []int) ([]*LearningRecord, error) {
 	query := `
 		SELECT lr.id, lr.user_id, lr.vocabulary_id, lr.status, lr.review_stage, 
-			   lr.next_review_date, lr.correct_count, lr.wrong_count, lr.create_time, lr.update_time,
-			   v.id, v.english, v.chinese, v.phonetic, v.audio_url, v.example_sentence, 
-			   v.type, v.grade, v.textbook, v.category, v.create_time
+		   lr.next_review_date, lr.correct_count, lr.wrong_count, lr.create_time, lr.update_time,
+		   v.id, v.english, v.chinese, v.phonetic, v.audio_url, v.example_sentence, 
+		   v.type, v.book_id, v.category, v.create_time
 		FROM ab_learning_record lr
 		JOIN ab_vocabulary v ON lr.vocabulary_id = v.id
 		WHERE lr.user_id = ? AND lr.status IN ('learning', 'reviewing') 
 		AND (lr.next_review_date <= CURRENT_DATE OR lr.next_review_date IS NULL)
-		ORDER BY lr.next_review_date ASC
 	`
-	rows, err := config.DB.Query(query, userID)
+
+	// 添加教材ID过滤
+	args := []interface{}{userID}
+	if len(bookIDs) > 0 {
+		query += " AND v.book_id IN (?"
+		args = append(args, bookIDs[0])
+		for i := 1; i < len(bookIDs); i++ {
+			query += ", ?"
+			args = append(args, bookIDs[i])
+		}
+		query += ")"
+	}
+
+	query += " ORDER BY lr.next_review_date ASC"
+
+	rows, err := config.DB.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -143,15 +190,17 @@ func GetDueReviewVocabularies(userID int64) ([]*LearningRecord, error) {
 	for rows.Next() {
 		var record LearningRecord
 		var vocab Vocabulary
+		var bookID *int
 		err := rows.Scan(
 			&record.ID, &record.UserID, &record.VocabularyID, &record.Status, &record.ReviewStage,
 			&record.NextReviewDate, &record.CorrectCount, &record.WrongCount, &record.CreateTime, &record.UpdateTime,
 			&vocab.ID, &vocab.English, &vocab.Chinese, &vocab.Phonetic, &vocab.AudioURL, &vocab.ExampleSentence,
-			&vocab.Type, &vocab.Grade, &vocab.Textbook, &vocab.Category, &vocab.CreateTime,
+			&vocab.Type, &bookID, &vocab.Category, &vocab.CreateTime,
 		)
 		if err != nil {
 			return nil, err
 		}
+		vocab.BookID = bookID
 		record.Vocabulary = &vocab
 		records = append(records, &record)
 	}
@@ -449,13 +498,13 @@ func GetVocabularyOptions(vocabularyID int, optionType string) ([]string, error)
 // CreateVocabulary 创建词汇
 func CreateVocabulary(vocab *Vocabulary) error {
 	query := `
-		INSERT INTO ab_vocabulary (english, chinese, phonetic, audio_url, example_sentence, type, grade, textbook, category)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO ab_vocabulary (english, chinese, phonetic, audio_url, example_sentence, type, book_id, category)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	result, err := config.DB.Exec(
 		query,
 		vocab.English, vocab.Chinese, vocab.Phonetic, vocab.AudioURL,
-		vocab.ExampleSentence, vocab.Type, vocab.Grade, vocab.Textbook, vocab.Category,
+		vocab.ExampleSentence, vocab.Type, vocab.BookID, vocab.Category,
 	)
 	if err != nil {
 		return err
@@ -484,7 +533,7 @@ func GetVocabularies(page, pageSize int) ([]*Vocabulary, int, error) {
 	// 获取分页数据
 	offset := (page - 1) * pageSize
 	query := `
-		SELECT id, english, chinese, phonetic, audio_url, example_sentence, type, grade, textbook, category, create_time
+		SELECT id, english, chinese, phonetic, audio_url, example_sentence, type, book_id, category, create_time
 		FROM ab_vocabulary
 		ORDER BY id DESC
 		LIMIT ? OFFSET ?
@@ -497,11 +546,12 @@ func GetVocabularies(page, pageSize int) ([]*Vocabulary, int, error) {
 
 	for rows.Next() {
 		var vocab Vocabulary
-		var phonetic, audioURL, exampleSentence, grade, textbook, category *string
+		var phonetic, audioURL, exampleSentence, category *string
+		var bookID *int
 		err := rows.Scan(
 			&vocab.ID, &vocab.English, &vocab.Chinese, &phonetic,
 			&audioURL, &exampleSentence, &vocab.Type,
-			&grade, &textbook, &category, &vocab.CreateTime,
+			&bookID, &category, &vocab.CreateTime,
 		)
 		if err != nil {
 			return nil, 0, err
@@ -509,8 +559,7 @@ func GetVocabularies(page, pageSize int) ([]*Vocabulary, int, error) {
 		vocab.Phonetic = phonetic
 		vocab.AudioURL = audioURL
 		vocab.ExampleSentence = exampleSentence
-		vocab.Grade = grade
-		vocab.Textbook = textbook
+		vocab.BookID = bookID
 		vocab.Category = category
 		vocabularies = append(vocabularies, &vocab)
 	}
@@ -523,13 +572,13 @@ func UpdateVocabulary(vocab *Vocabulary) error {
 	query := `
 		UPDATE ab_vocabulary
 		SET english = ?, chinese = ?, phonetic = ?, audio_url = ?, example_sentence = ?, 
-			type = ?, grade = ?, textbook = ?, category = ?
+			type = ?, book_id = ?, category = ?
 		WHERE id = ?
 	`
 	_, err := config.DB.Exec(
 		query,
 		vocab.English, vocab.Chinese, vocab.Phonetic, vocab.AudioURL,
-		vocab.ExampleSentence, vocab.Type, vocab.Grade, vocab.Textbook, vocab.Category, vocab.ID,
+		vocab.ExampleSentence, vocab.Type, vocab.BookID, vocab.Category, vocab.ID,
 	)
 	return err
 }
@@ -571,6 +620,31 @@ func DeleteVocabulary(id int) error {
 	return tx.Commit()
 }
 
+// GetVocabulariesByBookID 根据教材ID获取词汇列表
+func GetVocabulariesByBookID(bookID int) ([]*Vocabulary, error) {
+	query := `SELECT id, english FROM ab_vocabulary WHERE book_id = ?`
+	rows, err := config.DB.Query(query, bookID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var vocabularies []*Vocabulary
+	for rows.Next() {
+		var vocab Vocabulary
+		if err := rows.Scan(&vocab.ID, &vocab.English); err != nil {
+			return nil, err
+		}
+		vocabularies = append(vocabularies, &vocab)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return vocabularies, nil
+}
+
 // BatchCreateVocabulary 批量创建词汇
 func BatchCreateVocabulary(vocabularies []*Vocabulary) error {
 	// 开始事务
@@ -585,15 +659,15 @@ func BatchCreateVocabulary(vocabularies []*Vocabulary) error {
 	}()
 
 	query := `
-		INSERT INTO ab_vocabulary (english, chinese, phonetic, audio_url, example_sentence, type, grade, textbook, category)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO ab_vocabulary (english, chinese, phonetic, audio_url, example_sentence, type, book_id, category)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	for _, vocab := range vocabularies {
 		_, err = tx.Exec(
 			query,
 			vocab.English, vocab.Chinese, vocab.Phonetic, vocab.AudioURL,
-			vocab.ExampleSentence, vocab.Type, vocab.Grade, vocab.Textbook, vocab.Category,
+			vocab.ExampleSentence, vocab.Type, vocab.BookID, vocab.Category,
 		)
 		if err != nil {
 			return err
@@ -654,4 +728,174 @@ func BatchDeleteVocabulary(ids []int) error {
 	}
 
 	return tx.Commit()
+}
+
+// GetBookOptions 获取教材选项列表
+func GetBookOptions() ([]map[string]interface{}, error) {
+	// 获取所有教材
+	bookQuery := `SELECT id, name FROM ab_book ORDER BY name`
+	bookRows, err := config.DB.Query(bookQuery)
+	if err != nil {
+		return nil, err
+	}
+	defer bookRows.Close()
+
+	var books []map[string]interface{}
+	for bookRows.Next() {
+		var id int
+		var name string
+		if err := bookRows.Scan(&id, &name); err != nil {
+			return nil, err
+		}
+		books = append(books, map[string]interface{}{
+			"id":   id,
+			"name": name,
+		})
+	}
+
+	return books, nil
+}
+
+// Book 教材模型
+type Book struct {
+	ID         int       `json:"id"`
+	Name       string    `json:"name"`
+	CreateTime time.Time `json:"create_time"`
+}
+
+// GetBooks 获取所有教材列表
+func GetBooks() ([]*Book, error) {
+	query := `SELECT id, name, create_time FROM ab_book ORDER BY name`
+	rows, err := config.DB.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var books []*Book
+	for rows.Next() {
+		var book Book
+		err := rows.Scan(&book.ID, &book.Name, &book.CreateTime)
+		if err != nil {
+			return nil, err
+		}
+		books = append(books, &book)
+	}
+
+	return books, nil
+}
+
+// GetBookByID 根据ID获取教材
+func GetBookByID(id int) (*Book, error) {
+	var book Book
+	query := `SELECT id, name, create_time FROM ab_book WHERE id = ?`
+	err := config.DB.QueryRow(query, id).Scan(&book.ID, &book.Name, &book.CreateTime)
+	if err != nil {
+		return nil, err
+	}
+	return &book, nil
+}
+
+// CreateBook 创建教材
+func CreateBook(book *Book) error {
+	query := `INSERT INTO ab_book (name) VALUES (?)`
+	result, err := config.DB.Exec(query, book.Name)
+	if err != nil {
+		return err
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return err
+	}
+	book.ID = int(id)
+	return nil
+}
+
+// UpdateBook 更新教材
+func UpdateBook(book *Book) error {
+	query := `UPDATE ab_book SET name = ? WHERE id = ?`
+	_, err := config.DB.Exec(query, book.Name, book.ID)
+	return err
+}
+
+// DeleteBook 删除教材
+func DeleteBook(id int) error {
+	query := `DELETE FROM ab_book WHERE id = ?`
+	_, err := config.DB.Exec(query, id)
+	return err
+}
+
+// GetTodayLearnedWords 获取今日学习的单词
+func GetTodayLearnedWords(userID int64, bookIDs []int) ([]map[string]interface{}, error) {
+	query := `
+		SELECT lr.id, lr.user_id, lr.vocabulary_id, lr.status, lr.review_stage, 
+		   lr.next_review_date, lr.correct_count, lr.wrong_count, lr.create_time, lr.update_time,
+		   v.id, v.english, v.chinese, v.phonetic, v.audio_url, v.example_sentence, 
+		   v.type, v.book_id, v.category, v.create_time,
+		   DATE(lr.create_time) = DATE(NOW()) AS is_new
+		FROM ab_learning_record lr
+		JOIN ab_vocabulary v ON lr.vocabulary_id = v.id
+		WHERE lr.user_id = ? AND DATE(lr.create_time) = DATE(NOW())
+	`
+
+	// 添加教材ID过滤
+	args := []interface{}{userID}
+	if len(bookIDs) > 0 {
+		query += " AND v.book_id IN (?"
+		args = append(args, bookIDs[0])
+		for i := 1; i < len(bookIDs); i++ {
+			query += ", ?"
+			args = append(args, bookIDs[i])
+		}
+		query += ")"
+	}
+
+	rows, err := config.DB.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var records []map[string]interface{}
+	for rows.Next() {
+		var record LearningRecord
+		var vocab Vocabulary
+		var bookID *int
+		var isNew bool
+		err := rows.Scan(
+			&record.ID, &record.UserID, &record.VocabularyID, &record.Status, &record.ReviewStage,
+			&record.NextReviewDate, &record.CorrectCount, &record.WrongCount, &record.CreateTime, &record.UpdateTime,
+			&vocab.ID, &vocab.English, &vocab.Chinese, &vocab.Phonetic, &vocab.AudioURL, &vocab.ExampleSentence,
+			&vocab.Type, &bookID, &vocab.Category, &vocab.CreateTime,
+			&isNew,
+		)
+		if err != nil {
+			return nil, err
+		}
+		vocab.BookID = bookID
+		record.Vocabulary = &vocab
+		records = append(records, map[string]interface{}{
+			"ID":         record.ID,
+			"UserID":     record.UserID,
+			"Vocabulary": record.Vocabulary,
+			"IsNew":      isNew,
+		})
+	}
+
+	return records, nil
+}
+
+// UpdateLearningRecordForReview 更新学习记录为需要复习
+func UpdateLearningRecordForReview(recordID int) error {
+	// 错误后第二天复习
+	nextReviewDate := time.Now().AddDate(0, 0, 1)
+
+	query := `
+		UPDATE ab_learning_record 
+		SET status = 'reviewing', review_stage = 0, next_review_date = ? 
+		WHERE id = ?
+	`
+	_, err := config.DB.Exec(query, nextReviewDate, recordID)
+	return err
 }

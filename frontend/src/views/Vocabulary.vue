@@ -3,38 +3,75 @@
     <el-card class="vocabulary-header">
       <template #header>
         <div class="header-content">
-          <h2>艾宾浩斯单词记忆</h2>
+          <div class="header-left">
+            <el-button type="primary" @click="goHome" size="small">
+              <el-icon><ArrowLeft /></el-icon>
+              返回主页
+            </el-button>
+            <h2>艾宾浩斯单词记忆</h2>
+          </div>
           <div class="header-stats">
             <el-statistic :value="todayPlan.newWords" title="今日新单词" />
             <el-statistic :value="todayPlan.reviewWords" title="今日复习" />
           </div>
         </div>
       </template>
+      <div class="book-selection">
+        <h3>选择教材</h3>
+        <el-select
+          v-model="selectedBookIds"
+          multiple
+          filterable
+          placeholder="请选择要学习的教材"
+          style="width: 100%"
+          @change="handleBookSelectionChange"
+        >
+          <el-option
+            v-for="book in bookOptions"
+            :key="book.id"
+            :label="book.name"
+            :value="book.id"
+          />
+        </el-select>
+      </div>
       <div class="plan-summary">
         <p>今天需要学习 {{ todayPlan.newWords }} 个新单词，复习 {{ todayPlan.reviewWords }} 个单词</p>
-        <el-button type="primary" size="large" @click="startLearning" :disabled="isLearning">
-          {{ isLearning ? '学习中...' : '开始学习' }}
-        </el-button>
+        <div style="display: flex; gap: 10px; justify-content: center;">
+          <el-button type="primary" size="large" @click="startLearning" :disabled="isLearning">
+            {{ isLearning ? '学习中...' : '开始学习' }}
+          </el-button>
+          <el-button type="success" size="large" @click="startDictation">
+            默写单词
+          </el-button>
+        </div>
       </div>
     </el-card>
 
     <el-dialog
       v-model="learningDialogVisible"
       title="单词学习"
-      width="80%"
+      width="90%"
       :close-on-click-modal="false"
       @close="closeLearning"
     >
       <div v-if="currentWord" class="word-card">
         <div class="word-info">
-          <h3 class="word-english" v-show="learningMode !== 'chinese'">{{ currentWord.english }}</h3>
-          <div style="display: flex; align-items: center; gap: 10px;" v-show="learningMode !== 'chinese'">
+          <!-- 新单词/复习单词标签 -->
+          <div class="word-type-tag" v-if="currentWord.is_new">
+            <el-tag type="success" size="small">新单词</el-tag>
+          </div>
+          <div class="word-type-tag" v-else>
+            <el-tag type="warning" size="small">复习单词</el-tag>
+          </div>
+          
+          <h3 class="word-english" v-show="learningMode !== 'english'">{{ currentWord.english }}</h3>
+          <div style="display: flex; align-items: center; gap: 10px;" v-show="learningMode !== 'english'">
             <p class="word-phonetic" style="margin: 0;">{{ formatPhonetic(currentWord.phonetic) }}</p>
             <el-button type="info" size="small" @click="playAudio" :loading="isPlaying" style="margin: 0;">
               播放
             </el-button>
           </div>
-          <p class="word-chinese" v-show="learningMode !== 'english'">{{ currentWord.chinese }}</p>
+          <p class="word-chinese" v-show="learningMode !== 'chinese'">{{ currentWord.chinese }}</p>
           <div class="word-audio">
             <el-button size="small" :type="learningMode === 'normal' ? 'primary' : ''" @click="learningMode = 'normal'">正常</el-button>
             <el-button size="small" :type="learningMode === 'english' ? 'primary' : ''" @click="learningMode = 'english'">默英文</el-button>
@@ -142,7 +179,7 @@
     <el-dialog
       v-model="wordMeaningDialogVisible"
       title="单词意思"
-      width="50%"
+      width="80%"
       :close-on-click-modal="false"
     >
       <div v-loading="isLoading">
@@ -159,6 +196,77 @@
         </span>
       </template>
     </el-dialog>
+
+    <!-- 默写单词对话框 -->
+    <el-dialog
+      v-model="dictationDialogVisible"
+      title="默写单词"
+      width="90%"
+      :close-on-click-modal="false"
+      @close="closeDictation"
+    >
+      <div v-if="currentDictationWord" class="word-card">
+        <div class="word-info">
+          <!-- 新单词/复习单词标签 -->
+          <div class="word-type-tag" v-if="currentDictationWord.is_new">
+            <el-tag type="success" size="small">新单词</el-tag>
+          </div>
+          <div class="word-type-tag" v-else>
+            <el-tag type="warning" size="small">复习单词</el-tag>
+          </div>
+          
+          <h3 class="word-english" v-show="dictationMode === 'normal' || dictationMode === 'english' || (dictationMode !== 'chinese' && dictationCheckType !== 'englishToChinese')">{{ currentDictationWord.english }}</h3>
+          <div style="display: flex; align-items: center; gap: 10px;" v-show="dictationMode === 'normal' || dictationMode === 'english' || (dictationMode !== 'chinese' && dictationCheckType !== 'englishToChinese')">
+            <p class="word-phonetic" style="margin: 0;">{{ formatPhonetic(currentDictationWord.phonetic) }}</p>
+            <el-button type="info" size="small" @click="playDictationAudio" :loading="isPlaying" style="margin: 0;">
+              播放
+            </el-button>
+          </div>
+          <p class="word-chinese" v-show="dictationMode === 'normal' || dictationMode === 'chinese' || (dictationMode !== 'english' && dictationCheckType !== 'chineseToEnglish')">{{ currentDictationWord.chinese }}</p>
+          <div class="word-audio">
+            <el-button size="small" :type="dictationMode === 'normal' ? 'primary' : ''" @click="dictationMode = 'normal'">看答案</el-button>
+            <el-button size="small" :type="dictationMode === 'english' ? 'primary' : ''" @click="dictationMode = 'english'">只看英文</el-button>
+            <el-button size="small" :type="dictationMode === 'chinese' ? 'primary' : ''" @click="dictationMode = 'chinese'">只看中文</el-button>
+          </div>
+        </div>
+
+        <div class="learning-stage">
+          <h4>默写检测</h4>
+          <div v-if="dictationCheckType === 'chineseToEnglish'" class="check-section">
+            <p class="check-prompt">请根据中文默写英文单词：</p>
+            <p class="check-question">{{ currentDictationWord.chinese }}</p>
+          </div>
+          <div v-else-if="dictationCheckType === 'englishToChinese'" class="check-section">
+            <p class="check-prompt">请根据英文默中文意思：</p>
+            <p class="check-question">{{ currentDictationWord.english }}</p>
+          </div>
+        </div>
+
+        <div class="learning-feedback" v-if="dictationShowFeedback">
+          <el-alert
+            :title="dictationIsCorrect ? '正确！' : '错误！'"
+            :type="dictationIsCorrect ? 'success' : 'error'"
+            show-icon
+          />
+          <p v-if="!dictationIsCorrect" class="correct-answer">正确答案：{{ dictationCorrectAnswer }}</p>
+        </div>
+      </div>
+
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="closeDictation">退出默写</el-button>
+          <el-button v-if="!dictationShowFeedback" type="danger" @click="dictationFailed">
+            默写失败
+          </el-button>
+          <el-button v-if="!dictationShowFeedback" type="success" @click="submitDictationAnswer">
+            默写成功
+          </el-button>
+          <el-button v-else type="primary" @click="nextDictationWord">
+            下一个
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -166,7 +274,8 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../store/user'
-import { ElMessage, ElMessageBox, ElLoading } from 'element-plus'
+import { ElMessage, ElMessageBox, ElLoading, ElIcon } from 'element-plus'
+import { ArrowLeft } from '@element-plus/icons-vue'
 import api from '../api'
 
 const router = useRouter()
@@ -180,6 +289,11 @@ const masteredWords = ref(0)
 const learningStreak = ref(0)
 const accuracyRate = ref(0)
 const todayLearnedWords = ref(0)
+
+// 教材选择
+const bookOptions = ref([])
+const selectedBookIds = ref([])
+const isLoadingBooks = ref(false)
 
 // 学习状态
 const isLearning = ref(false)
@@ -197,10 +311,68 @@ const isPlaying = ref(false)
 // 学习模式：normal (正常), english (默英文), chinese (默中文)
 const learningMode = ref('normal')
 
+// 加载教材选项
+const loadBookOptions = async () => {
+  try {
+    isLoadingBooks.value = true
+    const response = await api.get('/vocabulary/options/book')
+    bookOptions.value = response.data.books || []
+  } catch (error) {
+    console.error('Failed to load book options:', error)
+  } finally {
+    isLoadingBooks.value = false
+  }
+}
+
+// 加载用户教材偏好
+const loadUserBookPreferences = async () => {
+  try {
+    const response = await api.get('/user/preference', {
+      params: { key: 'selected_books' }
+    })
+    if (response.data.preference && response.data.preference.preference_value) {
+      selectedBookIds.value = JSON.parse(response.data.preference.preference_value)
+    }
+  } catch (error) {
+    console.error('Failed to load user book preferences:', error)
+    // 降级到localStorage
+    const savedPreferences = localStorage.getItem('userBookPreferences')
+    if (savedPreferences) {
+      selectedBookIds.value = JSON.parse(savedPreferences)
+    }
+  }
+}
+
+// 保存用户教材偏好
+const saveUserBookPreferences = async () => {
+  try {
+    await api.post('/user/preference', {
+      key: 'selected_books',
+      value: JSON.stringify(selectedBookIds.value)
+    })
+    // 同时保存到localStorage作为备份
+    localStorage.setItem('userBookPreferences', JSON.stringify(selectedBookIds.value))
+  } catch (error) {
+    console.error('Failed to save user book preferences:', error)
+    // 降级到localStorage
+    localStorage.setItem('userBookPreferences', JSON.stringify(selectedBookIds.value))
+  }
+}
+
+// 处理教材选择变化
+const handleBookSelectionChange = async () => {
+  await saveUserBookPreferences()
+  await loadTodayPlan()
+}
+
 // 加载今日学习计划
 const loadTodayPlan = async () => {
   try {
-    const response = await api.get('/vocabulary/plan')
+    const response = await api.get('/vocabulary/plan', {
+      params: {
+        book_ids: selectedBookIds.value.join(',')
+      }
+    })
     todayPlan.value = response.data.plan
     totalWords.value = response.data.stats.totalWords
     masteredWords.value = response.data.stats.masteredWords
@@ -212,35 +384,12 @@ const loadTodayPlan = async () => {
   }
 }
 
-// 开始学习
-const startLearning = async () => {
-  try {
-    const response = await api.get('/vocabulary/start')
-    if (!response.data.words || response.data.words.length === 0) {
-      ElMessage.info('今天没有需要学习的单词')
-      return
-    }
-    
-    // 恢复到正常模式
-    learningMode.value = 'normal'
-    isLearning.value = true
-    learningDialogVisible.value = true
-    currentStage.value = 'recognition'
-    currentCheckType.value = 'chineseToEnglish'
-    showFeedback.value = false
-    
-    // 开始学习第一个单词
-    await loadNextWord(response.data.words)
-  } catch (error) {
-    console.error('Failed to start learning:', error)
-    isLearning.value = false
-  }
-}
+
 
 // 加载下一个单词
 const loadNextWord = async (words) => {
   if (!words || words.length === 0) {
-    ElMessage.success('今日学习完成！')
+    ElMessage.info('没有需要学习的单词')
     closeLearning()
     await loadTodayPlan()
     return
@@ -319,13 +468,50 @@ const submitAnswer = async () => {
 }
 
 // 下一个单词
+// 存储当前学习的单词列表
+const currentWords = ref([])
+
+const startLearning = async () => {
+  try {
+    const response = await api.get('/vocabulary/start', {
+      params: {
+        book_ids: selectedBookIds.value.join(',')
+      }
+    })
+    if (!response.data.words || response.data.words.length === 0) {
+      ElMessage.info('今天没有需要学习的单词')
+      closeLearning()
+      return false
+    }
+    
+    // 存储当前学习的单词列表
+    currentWords.value = response.data.words
+    
+    // 恢复到正常模式
+    learningMode.value = 'normal'
+    isLearning.value = true
+    learningDialogVisible.value = true
+    currentStage.value = 'recognition'
+    currentCheckType.value = 'chineseToEnglish'
+    showFeedback.value = false
+    
+    // 开始学习第一个单词
+    await loadNextWord(currentWords.value)
+    return true
+  } catch (error) {
+    console.error('Failed to start learning:', error)
+    ElMessage.error('开始学习失败：' + (error.response?.data?.error || error.message))
+    return false
+  }
+}
+
 const nextWord = async () => {
   // 只有当记忆检测通过后，才继续加载下一个单词
   if (isCorrect.value) {
     // 恢复到正常模式
     learningMode.value = 'normal'
     // 继续加载下一个单词
-    await startLearning()
+    await loadNextWord(currentWords.value)
   } else {
     // 记忆检测失败，重新开始当前单词的记忆检测
     currentStage.value = 'memory'
@@ -480,6 +666,17 @@ const wordMeaningDialogVisible = ref(false)
 const currentWordMeaning = ref('')
 const currentWordForMeaning = ref('')
 
+// 默写单词相关状态
+const dictationDialogVisible = ref(false)
+const currentDictationWord = ref(null)
+const dictationMode = ref('normal') // normal, english, chinese
+const dictationCheckType = ref('chineseToEnglish') // chineseToEnglish, englishToChinese
+const dictationUserAnswer = ref('')
+const dictationCorrectAnswer = ref('')
+const dictationShowFeedback = ref(false)
+const dictationIsCorrect = ref(false)
+const dictationWords = ref([])
+
 // 查询单词的中文意思
 const getWordMeaning = async (word) => {
   let loadingInstance = null
@@ -524,10 +721,17 @@ const closeWordMeaningDialog = () => {
 }
 
 // 关闭学习
-const closeLearning = () => {
+const closeLearning = async () => {
   learningDialogVisible.value = false
   isLearning.value = false
   currentWord.value = null
+  // 重新加载学习计划数据
+  await loadTodayPlan()
+}
+
+// 返回主页
+const goHome = () => {
+  router.push('/')
 }
 
 // 事件处理函数
@@ -543,10 +747,190 @@ const handleWordClick = (event) => {
   }
 }
 
+// 开始默写单词
+const startDictation = async () => {
+  try {
+    // 先获取需要默写的单词
+    const response = await api.get('/vocabulary/dictation', {
+      params: {
+        book_ids: selectedBookIds.value.join(',')
+      }
+    })
+    if (!response.data.words || response.data.words.length === 0) {
+      ElMessage.info('今天没有需要默写的单词')
+      return
+    }
+    
+    // 弹出选择对话框
+    ElMessageBox.confirm(
+      '请选择默写模式',
+      '默写单词',
+      {
+        confirmButtonText: '根据中文默英文',
+        cancelButtonText: '根据英文默中文',
+        type: 'info',
+        distinguishCancelAndClose: true
+      }
+    ).then(() => {
+      // 用户选择根据中文默英文
+      startDictationWithMode(response.data.words, 'chineseToEnglish')
+    }).catch((action) => {
+      // 用户选择根据英文默中文
+      if (action === 'cancel') {
+        startDictationWithMode(response.data.words, 'englishToChinese')
+      }
+    })
+  } catch (error) {
+    console.error('Failed to start dictation:', error)
+    ElMessage.error('开始默写失败')
+  }
+}
+
+// 开始默写单词（指定模式）
+const startDictationWithMode = async (words, checkType) => {
+  // 根据选择的默写模式设置默认显示模式
+  if (checkType === 'chineseToEnglish') {
+    // 根据中文默英文，默认只看中文
+    dictationMode.value = 'chinese'
+  } else if (checkType === 'englishToChinese') {
+    // 根据英文默中文，默认只看英文
+    dictationMode.value = 'english'
+  } else {
+    // 默认正常模式
+    dictationMode.value = 'normal'
+  }
+  
+  dictationDialogVisible.value = true
+  dictationShowFeedback.value = false
+  dictationWords.value = words
+  
+  // 开始默写第一个单词
+  await loadNextDictationWordWithMode(checkType)
+}
+
+// 加载下一个默写单词（指定模式）
+const loadNextDictationWordWithMode = async (checkType) => {
+  if (!dictationWords.value || dictationWords.value.length === 0) {
+    ElMessage.info('没有需要默写的单词')
+    closeDictation()
+    return
+  }
+  
+  currentDictationWord.value = dictationWords.value.shift()
+  dictationShowFeedback.value = false
+  dictationUserAnswer.value = ''
+  
+  // 使用指定的检测类型
+  dictationCheckType.value = checkType
+  
+  // 设置正确答案
+  if (dictationCheckType.value === 'chineseToEnglish') {
+    dictationCorrectAnswer.value = currentDictationWord.value.english
+  } else if (dictationCheckType.value === 'englishToChinese') {
+    dictationCorrectAnswer.value = currentDictationWord.value.chinese
+  }
+}
+
+// 加载下一个默写单词
+const loadNextDictationWord = async () => {
+  if (!dictationWords.value || dictationWords.value.length === 0) {
+    ElMessage.info('没有需要默写的单词')
+    closeDictation()
+    return
+  }
+  
+  currentDictationWord.value = dictationWords.value.shift()
+  dictationShowFeedback.value = false
+  dictationUserAnswer.value = ''
+  
+  // 随机选择检测类型
+  const checkTypes = ['chineseToEnglish', 'englishToChinese']
+  dictationCheckType.value = checkTypes[Math.floor(Math.random() * checkTypes.length)]
+  
+  // 设置正确答案
+  if (dictationCheckType.value === 'chineseToEnglish') {
+    dictationCorrectAnswer.value = currentDictationWord.value.english
+  } else if (dictationCheckType.value === 'englishToChinese') {
+    dictationCorrectAnswer.value = currentDictationWord.value.chinese
+  }
+}
+
+// 播放默单词发音
+const playDictationAudio = () => {
+  if (currentDictationWord.value?.audio_url) {
+    const audio = new Audio(currentDictationWord.value.audio_url)
+    audio.play()
+    isPlaying.value = true
+    audio.onended = () => {
+      isPlaying.value = false
+    }
+  }
+}
+
+// 提交默答案
+const submitDictationAnswer = async () => {
+  // 用户点击默写成功，直接记录成功结果
+  dictationIsCorrect.value = true
+  dictationShowFeedback.value = true
+  
+  // 记录默写结果
+  try {
+    await api.post('/vocabulary/dictation/record', {
+      wordId: currentDictationWord.value.id,
+      isCorrect: true,
+      checkType: dictationCheckType.value
+    })
+  } catch (error) {
+    console.error('Failed to record dictation result:', error)
+  }
+}
+
+// 默写失败
+const dictationFailed = async () => {
+  dictationIsCorrect.value = false
+  dictationShowFeedback.value = true
+  // 显示完整的单词信息，相当于点击了"正常"按钮
+  dictationMode.value = 'normal'
+  
+  // 记录默写失败的单词到艾宾浩斯不会的单词逻辑
+  try {
+    await api.post('/vocabulary/dictation/record', {
+      wordId: currentDictationWord.value.id,
+      isCorrect: false,
+      checkType: dictationCheckType.value
+    })
+  } catch (error) {
+    console.error('Failed to record dictation result:', error)
+  }
+}
+
+// 下一个默单词
+const nextDictationWord = async () => {
+  // 根据检测类型设置相应的显示模式
+  if (dictationCheckType.value === 'chineseToEnglish') {
+    // 根据中文默英文，应该只看中文
+    dictationMode.value = 'chinese'
+  } else {
+    // 根据英文默中文，应该只看英文
+    dictationMode.value = 'english'
+  }
+  // 继续加载下一个单词，使用当前的检测类型
+  await loadNextDictationWordWithMode(dictationCheckType.value)
+}
+
+// 关闭默
+const closeDictation = () => {
+  dictationDialogVisible.value = false
+  currentDictationWord.value = null
+  dictationWords.value = []
+}
+
 onMounted(async () => {
   if (!user.value) {
     await userStore.getUserInfo()
   }
+  await loadBookOptions()
+  await loadUserBookPreferences()
   await loadTodayPlan()
   
   // 添加事件监听器，使用事件委托处理单词点击事件
@@ -578,6 +962,12 @@ onUnmounted(() => {
   gap: 20px;
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
 .header-content h2 {
   margin: 0;
   color: #667eea;
@@ -604,6 +994,19 @@ onUnmounted(() => {
   margin-bottom: 5px;
 }
 
+.book-selection {
+  padding: 20px;
+  background: #f9f9f9;
+  border-radius: 8px;
+  margin-bottom: 15px;
+}
+
+.book-selection h3 {
+  margin: 0 0 15px 0;
+  color: #666;
+  font-size: 16px;
+}
+
 .plan-summary {
   text-align: center;
   padding: 20px;
@@ -625,6 +1028,13 @@ onUnmounted(() => {
 .word-info {
   text-align: center;
   margin-bottom: 30px;
+  position: relative;
+}
+
+.word-type-tag {
+  position: absolute;
+  top: -10px;
+  right: 10px;
 }
 
 .word-english {
@@ -691,14 +1101,155 @@ onUnmounted(() => {
   margin-bottom: 20px;
 }
 
+.check-section {
+  text-align: left;
+  max-width: 100%;
+  overflow: hidden;
+}
+
 .check-options {
   margin-top: 20px;
+  max-width: 100%;
 }
 
 .check-options .el-radio {
   display: block;
   margin-bottom: 10px;
   font-size: 16px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
+}
+
+.check-options .el-radio__input {
+  float: left;
+  margin-right: 8px;
+}
+
+.check-options .el-radio__label {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: normal !important;
+  display: block;
+  margin-left: 30px;
+  max-width: 100%;
+}
+
+/* 确保对话框内容区域有适当的内边距 */
+.word-card {
+  padding: 20px;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* 确保对话框内容不超出范围 */
+.el-dialog__body {
+  padding: 0 !important;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+/* 强制选项文字换行 */
+.learning-stage .el-radio-group.check-options {
+  max-width: 100% !important;
+  width: 100% !important;
+}
+
+.learning-stage .el-radio-group.check-options .el-radio {
+  display: block !important;
+  position: relative !important;
+  padding-left: 5px !important;
+  margin-bottom: 15px !important;
+  line-height: 1.4 !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  overflow: hidden !important;
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+}
+
+.learning-stage .el-radio-group.check-options .el-radio__input {
+  position: absolute !important;
+  left: 0 !important;
+  top: 2px !important;
+  margin: 0 !important;
+}
+
+.learning-stage .el-radio-group.check-options .el-radio__label {
+  display: block !important;
+  word-break: break-all !important;
+  white-space: normal !important;
+  line-height: 1.4 !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: visible !important;
+}
+
+/* 确保整个对话框内容不超出范围 */
+.el-dialog {
+  max-width: 90vw !important;
+  box-sizing: border-box !important;
+}
+
+.el-dialog__body {
+  padding: 0 !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.word-card {
+  padding: 20px !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+.learning-stage {
+  max-width: 100% !important;
+  width: 100% !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.check-section {
+  max-width: 100% !important;
+  width: 100% !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.listen-button {
+  margin-bottom: 20px;
+}
+
+.word-card {
+  padding: 20px !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+.learning-stage {
+  max-width: 100% !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.check-section {
+  max-width: 100% !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.check-options {
+  max-width: 100% !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
 }
 
 .listen-button {

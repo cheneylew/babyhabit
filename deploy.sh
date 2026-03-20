@@ -24,12 +24,17 @@ cd ../backend
 GOOS=linux GOARCH=amd64 go build -o babyhabit
 cp babyhabit ../build/
 cp .env ../build/
+# cp -r files ../build/
 
 # 复制启动脚本
 echo "Copying startup script..."
 cd ..
 cp build.sh build/
 chmod +x build/build.sh
+
+# 复制files目录
+echo "Copying files directory..."
+
 
 # 3. 上传到远程服务器
 echo "Deploying to remote server..."

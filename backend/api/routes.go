@@ -81,12 +81,22 @@ func SetupRoutes(router *gin.Engine) {
 		auth.GET("/vocabulary/plan", controllers.GetVocabularyPlan)
 		auth.GET("/vocabulary/start", controllers.StartVocabularyLearning)
 		auth.GET("/vocabulary/options", controllers.GetVocabularyOptions)
+		auth.GET("/vocabulary/options/book", controllers.GetBookOptions)
 		auth.POST("/vocabulary/record", controllers.RecordVocabularyLearning)
 		auth.GET("/vocabulary/stats", controllers.GetVocabularyStats)
 		// 生成例句音频
 		auth.POST("/vocabulary/generate-sentence-audio", controllers.GenerateSentenceAudio)
 		// 获取单词意思
 		auth.POST("/vocabulary/get-word-meaning", controllers.GetWordMeaning)
+		// 默写单词API
+		auth.GET("/vocabulary/dictation", controllers.GetVocabularyDictation)
+		auth.POST("/vocabulary/dictation/record", controllers.RecordVocabularyDictation)
+
+		// 用户偏好设置API
+		auth.GET("/user/preferences", controllers.GetUserPreferences)
+		auth.GET("/user/preference", controllers.GetUserPreference)
+		auth.POST("/user/preference", controllers.SetUserPreference)
+		auth.DELETE("/user/preference", controllers.DeleteUserPreference)
 	}
 
 	// 管理员路由
@@ -138,5 +148,12 @@ func SetupRoutes(router *gin.Engine) {
 		admin.DELETE("/vocabulary/:id", controllers.DeleteVocabulary)
 		admin.POST("/vocabulary/batch", controllers.BatchCreateVocabulary)
 		admin.DELETE("/vocabulary/batch", controllers.BatchDeleteVocabulary)
+
+		// 教材管理
+		admin.GET("/books", controllers.GetBooks)
+		admin.GET("/books/:id", controllers.GetBook)
+		admin.POST("/books", controllers.CreateBook)
+		admin.PUT("/books/:id", controllers.UpdateBook)
+		admin.DELETE("/books/:id", controllers.DeleteBook)
 	}
 }

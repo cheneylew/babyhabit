@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"babyhabit/models"
 	"babyhabit/utils"
@@ -24,15 +25,42 @@ func GetVocabularyPlan(c *gin.Context) {
 		return
 	}
 
+	// 获取教材ID参数
+	bookIDsStr := c.Query("book_ids")
+	var bookIDs []int
+	if bookIDsStr != "" {
+		for _, idStr := range strings.Split(bookIDsStr, ",") {
+			// 去除空格
+			idStr = strings.TrimSpace(idStr)
+			// 跳过空字符串
+			if idStr == "" {
+				continue
+			}
+			id, err := strconv.Atoi(idStr)
+			if err == nil && id > 0 {
+				bookIDs = append(bookIDs, id)
+			}
+		}
+	}
+
+	// 获取用户每日单词数量偏好设置，默认为5个
+	dailyWordLimit := 5
+	preference, err := models.GetUserPreference(userID, "daily_word_limit")
+	if err == nil && preference != nil {
+		if limit, err := strconv.Atoi(preference.PreferenceValue); err == nil && limit > 0 {
+			dailyWordLimit = limit
+		}
+	}
+
 	// 获取新单词
-	newWords, err := models.GetNewVocabularies(userID, 5)
+	newWords, err := models.GetNewVocabularies(userID, dailyWordLimit, bookIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取新单词失败"})
 		return
 	}
 
 	// 获取需要复习的单词
-	reviewRecords, err := models.GetDueReviewVocabularies(userID)
+	reviewRecords, err := models.GetDueReviewVocabularies(userID, bookIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取复习单词失败"})
 		return
@@ -70,15 +98,55 @@ func StartVocabularyLearning(c *gin.Context) {
 		return
 	}
 
+	// 获取教材ID参数
+	bookIDsStr := c.Query("book_ids")
+	var bookIDs []int
+	if bookIDsStr != "" {
+		for _, idStr := range strings.Split(bookIDsStr, ",") {
+			// 去除空格
+			idStr = strings.TrimSpace(idStr)
+			// 跳过空字符串
+			if idStr == "" {
+				continue
+			}
+			id, err := strconv.Atoi(idStr)
+			if err == nil && id > 0 {
+				bookIDs = append(bookIDs, id)
+			}
+		}
+	}
+
+	// 获取今天已经学习的新单词数量
+	learnedToday, err := models.GetTodayLearnedNewWordsCount(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取今日学习记录失败"})
+		return
+	}
+
+	// 获取用户每日单词数量偏好设置，默认为5个
+	dailyWordLimit := 5
+	preference, err := models.GetUserPreference(userID, "daily_word_limit")
+	if err == nil && preference != nil {
+		if limit, err := strconv.Atoi(preference.PreferenceValue); err == nil && limit > 0 {
+			dailyWordLimit = limit
+		}
+	}
+
+	// 计算今天还可以学习的新单词数量
+	remainingNewWords := dailyWordLimit - learnedToday
+	if remainingNewWords < 0 {
+		remainingNewWords = 0
+	}
+
 	// 获取新单词
-	newWords, err := models.GetNewVocabularies(userID, 5)
+	newWords, err := models.GetNewVocabularies(userID, remainingNewWords, bookIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取新单词失败"})
 		return
 	}
 
 	// 获取需要复习的单词
-	reviewRecords, err := models.GetDueReviewVocabularies(userID)
+	reviewRecords, err := models.GetDueReviewVocabularies(userID, bookIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取复习单词失败"})
 		return
@@ -275,6 +343,12 @@ func CreateVocabulary(c *gin.Context) {
 	var vocab models.Vocabulary
 	if err := c.ShouldBindJSON(&vocab); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求数据"})
+		return
+	}
+
+	// 验证教材必填
+	if vocab.BookID == nil || *vocab.BookID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "教材不能为空"})
 		return
 	}
 
@@ -486,6 +560,7 @@ func DeleteVocabulary(c *gin.Context) {
 func BatchCreateVocabulary(c *gin.Context) {
 	var request struct {
 		Vocabularies []models.Vocabulary `json:"vocabularies"`
+		BookID       int                 `json:"book_id"`
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -493,54 +568,139 @@ func BatchCreateVocabulary(c *gin.Context) {
 		return
 	}
 
-	// 转换为指针切片并生成完整的单词信息
-	var vocabPtrs []*models.Vocabulary
-	for i := range request.Vocabularies {
-		vocab := &request.Vocabularies[i]
+	// 验证教材必填
+	if request.BookID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "教材不能为空"})
+		return
+	}
 
-		// 生成完整的单词信息
-		wordInfo, err := utils.GenerateWordInfo(vocab.English)
-		if err == nil {
+	// 检查是否有重复词汇
+	existingWords, err := models.GetVocabulariesByBookID(request.BookID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查词汇重复失败"})
+		return
+	}
+
+	// 构建已存在词汇的映射
+	existingWordMap := make(map[string]bool)
+	for _, word := range existingWords {
+		existingWordMap[word.English] = true
+	}
+
+	// 过滤掉重复的词汇
+	var filteredVocabularies []models.Vocabulary
+	for _, vocab := range request.Vocabularies {
+		if !existingWordMap[vocab.English] {
+			filteredVocabularies = append(filteredVocabularies, vocab)
+		}
+	}
+
+	// 如果没有需要导入的词汇
+	if len(filteredVocabularies) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"message":    "所有词汇已存在，无需导入",
+			"count":      0,
+			"total":      len(request.Vocabularies),
+			"duplicates": len(request.Vocabularies),
+		})
+		return
+	}
+
+	// 设置响应头为JSON流
+	c.Header("Content-Type", "application/json")
+	c.Header("Transfer-Encoding", "chunked")
+
+	// 开始逐个处理词汇
+	successCount := 0
+	totalCount := len(filteredVocabularies)
+	duplicateCount := len(request.Vocabularies) - totalCount
+
+	for i, vocab := range filteredVocabularies {
+		// 为每个词汇创建新的实例
+		currentVocab := vocab
+		currentVocab.BookID = &request.BookID
+
+		// 生成完整的单词信息（重试机制）
+		var wordInfo *utils.WordInfo
+		var infoErr error
+		maxRetries := 3
+		for retry := 0; retry < maxRetries; retry++ {
+			wordInfo, infoErr = utils.GenerateWordInfo(currentVocab.English)
+			if infoErr == nil && wordInfo != nil {
+				break
+			}
+			// 重试间隔
+			time.Sleep(time.Second * time.Duration(retry+1))
+		}
+
+		// 处理单词信息
+		if infoErr == nil && wordInfo != nil {
 			// 设置中文翻译
-			vocab.Chinese = wordInfo.Chinese
+			currentVocab.Chinese = wordInfo.Chinese
 
 			// 设置音标（将PhoneticInfo转换为JSON字符串）
 			phoneticJSON, err := json.Marshal(wordInfo.Phonetic)
 			if err == nil {
 				phoneticStr := string(phoneticJSON)
-				vocab.Phonetic = &phoneticStr
+				currentVocab.Phonetic = &phoneticStr
 			}
 
 			// 设置例句（将[]Example转换为JSON字符串）
 			examplesJSON, err := json.Marshal(wordInfo.Examples)
 			if err == nil {
 				examplesStr := string(examplesJSON)
-				vocab.ExampleSentence = &examplesStr
+				currentVocab.ExampleSentence = &examplesStr
 			}
 
 			// 设置分类
 			category := wordInfo.Category
-			vocab.Category = &category
+			currentVocab.Category = &category
 
 			// 设置音频URL
 			if wordInfo.AudioURL != "" {
-				vocab.AudioURL = &wordInfo.AudioURL
+				currentVocab.AudioURL = &wordInfo.AudioURL
 			}
 		}
 
-		vocabPtrs = append(vocabPtrs, vocab)
+		// 保存词汇
+		err = models.CreateVocabulary(&currentVocab)
+		if err == nil {
+			successCount++
+		}
+
+		// 发送进度更新
+		progress := map[string]interface{}{
+			"status":     "processing",
+			"current":    i + 1,
+			"total":      totalCount,
+			"success":    successCount,
+			"duplicates": duplicateCount,
+			"word":       currentVocab.English,
+			"has_info":   wordInfo != nil,
+		}
+
+		// 序列化并发送
+		if data, err := json.Marshal(progress); err == nil {
+			c.Writer.Write(data)
+			c.Writer.Write([]byte("\n"))
+			c.Writer.Flush()
+		}
 	}
 
-	err := models.BatchCreateVocabulary(vocabPtrs)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "批量创建词汇失败"})
-		return
+	// 发送完成状态
+	finalStatus := map[string]interface{}{
+		"status":     "completed",
+		"total":      totalCount,
+		"success":    successCount,
+		"duplicates": duplicateCount,
+		"message":    "词汇批量创建完成",
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "词汇批量创建成功",
-		"count":   len(request.Vocabularies),
-	})
+	if data, err := json.Marshal(finalStatus); err == nil {
+		c.Writer.Write(data)
+		c.Writer.Write([]byte("\n"))
+		c.Writer.Flush()
+	}
 }
 
 // BatchDeleteVocabulary 批量删除词汇（管理员）
@@ -636,4 +796,253 @@ func GetWordMeaning(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"meaning": meaning})
+}
+
+// GetBooks 获取所有教材列表（管理员）
+func GetBooks(c *gin.Context) {
+	books, err := models.GetBooks()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取教材列表失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"books": books})
+}
+
+// GetBook 获取单个教材（管理员）
+func GetBook(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的教材ID"})
+		return
+	}
+
+	book, err := models.GetBookByID(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取教材失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"book": book})
+}
+
+// CreateBook 创建教材（管理员）
+func CreateBook(c *gin.Context) {
+	var book models.Book
+	if err := c.ShouldBindJSON(&book); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求数据"})
+		return
+	}
+
+	if book.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "教材名称不能为空"})
+		return
+	}
+
+	err := models.CreateBook(&book)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建教材失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "教材创建成功",
+		"book":    book,
+	})
+}
+
+// UpdateBook 更新教材（管理员）
+func UpdateBook(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的教材ID"})
+		return
+	}
+
+	var book models.Book
+	if err := c.ShouldBindJSON(&book); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求数据"})
+		return
+	}
+
+	if book.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "教材名称不能为空"})
+		return
+	}
+
+	book.ID = id
+	err = models.UpdateBook(&book)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新教材失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "教材更新成功",
+		"book":    book,
+	})
+}
+
+// DeleteBook 删除教材（管理员）
+func DeleteBook(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的教材ID"})
+		return
+	}
+
+	err = models.DeleteBook(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除教材失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "教材删除成功",
+	})
+}
+
+// GetBookOptions 获取教材选项列表
+func GetBookOptions(c *gin.Context) {
+	books, err := models.GetBookOptions()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取教材列表失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"books": books,
+	})
+}
+
+// GetVocabularyDictation 获取今日需要默写的单词
+func GetVocabularyDictation(c *gin.Context) {
+	user := c.MustGet("user").(*models.User)
+	userID := user.ID
+
+	if userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+
+	// 获取教材ID参数
+	bookIDsStr := c.Query("book_ids")
+	var bookIDs []int
+	if bookIDsStr != "" {
+		for _, idStr := range strings.Split(bookIDsStr, ",") {
+			// 去除空格
+			idStr = strings.TrimSpace(idStr)
+			// 跳过空字符串
+			if idStr == "" {
+				continue
+			}
+			id, err := strconv.Atoi(idStr)
+			if err == nil && id > 0 {
+				bookIDs = append(bookIDs, id)
+			}
+		}
+	}
+
+	// 从环境变量获取前端静态访问地址
+	frontendStaticURL := os.Getenv("FRONTEND_STATIC_URL")
+	if frontendStaticURL == "" {
+		frontendStaticURL = "http://localhost:8000"
+	}
+
+	// 获取今天已经学习的单词
+	learnedWords, err := models.GetTodayLearnedWords(userID, bookIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取今日学习单词失败"})
+		return
+	}
+
+	// 处理单词列表
+	var words []map[string]interface{}
+	for _, record := range learnedWords {
+		vocab := record["Vocabulary"].(*models.Vocabulary)
+		isNew := record["IsNew"].(bool)
+
+		audioURL := ""
+		if vocab.AudioURL != nil && *vocab.AudioURL != "" {
+			// 检查是否已经是完整的URL
+			if strings.HasPrefix(*vocab.AudioURL, "http://") || strings.HasPrefix(*vocab.AudioURL, "https://") {
+				audioURL = *vocab.AudioURL
+			} else {
+				audioURL = frontendStaticURL + *vocab.AudioURL
+			}
+		}
+
+		words = append(words, map[string]interface{}{
+			"id":               vocab.ID,
+			"english":          vocab.English,
+			"chinese":          vocab.Chinese,
+			"phonetic":         vocab.Phonetic,
+			"audio_url":        audioURL,
+			"example_sentence": vocab.ExampleSentence,
+			"type":             vocab.Type,
+			"is_new":           isNew,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"words": words,
+	})
+}
+
+// RecordVocabularyDictation 记录默写结果
+func RecordVocabularyDictation(c *gin.Context) {
+	user := c.MustGet("user").(*models.User)
+	userID := user.ID
+
+	if userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+
+	var request struct {
+		WordID    int    `json:"wordId"`
+		IsCorrect bool   `json:"isCorrect"`
+		CheckType string `json:"checkType"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求数据"})
+		return
+	}
+
+	// 获取或创建学习记录
+	record, err := models.GetLearningRecordByUserAndVocab(userID, request.WordID)
+	isNewRecord := false
+	if err != nil {
+		// 记录不存在，创建新记录
+		err = models.CreateLearningRecord(userID, request.WordID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "创建学习记录失败"})
+			return
+		}
+
+		// 重新获取记录
+		record, err = models.GetLearningRecordByUserAndVocab(userID, request.WordID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取学习记录失败"})
+			return
+		}
+		isNewRecord = true
+	}
+
+	fmt.Println("isNewRecord:", isNewRecord)
+
+	// 只有默写失败时才更新艾宾浩斯记录
+	if !request.IsCorrect {
+		err = models.UpdateLearningRecord(record.ID, request.IsCorrect)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "更新学习记录失败"})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "默写记录已更新",
+	})
 }

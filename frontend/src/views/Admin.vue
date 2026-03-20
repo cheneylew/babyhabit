@@ -182,7 +182,7 @@
         <el-tab-pane label="词汇管理" name="vocabulary">
           <div class="vocabulary-toolbar">
             <el-button type="primary" @click="addVocabulary">添加词汇</el-button>
-            <el-button type="success" @click="vocabularyBatchImportDialogVisible = true">批量导入</el-button>
+            <el-button type="success" @click="openVocabularyBatchImport">批量导入</el-button>
             <el-button type="danger" :disabled="selectedVocabularies.length === 0" @click="batchDeleteVocabularies">批量删除</el-button>
           </div>
           <el-table :data="vocabularies" style="width: 100%" class="vocabulary-table" @selection-change="handleVocabularySelectionChange">
@@ -196,7 +196,11 @@
                 {{ scope.row.type === 'word' ? '单词' : '句子' }}
               </template>
             </el-table-column>
-            <el-table-column prop="grade" label="年级" width="100" />
+            <el-table-column label="教材" width="150">
+              <template #default="scope">
+                {{ getBookName(scope.row.book_id) }}
+              </template>
+            </el-table-column>
             <el-table-column prop="category" label="分类" width="100" />
             <el-table-column prop="create_time" label="创建时间" width="180">
               <template #default="scope">
@@ -220,6 +224,28 @@
             @current-change="loadVocabularies"
             class="pagination"
           />
+        </el-tab-pane>
+
+        <!-- 教材管理 -->
+        <el-tab-pane label="教材管理" name="books">
+          <div class="books-toolbar">
+            <el-button type="primary" @click="addBook">添加教材</el-button>
+          </div>
+          <el-table :data="books" style="width: 100%" class="books-table">
+            <el-table-column prop="id" label="ID" width="80" />
+            <el-table-column prop="name" label="教材名称" />
+            <el-table-column prop="create_time" label="创建时间" width="180">
+              <template #default="scope">
+                {{ formatDate(scope.row.create_time) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="200">
+              <template #default="scope">
+                <el-button type="primary" size="small" @click="editBook(scope.row)">编辑</el-button>
+                <el-button type="danger" size="small" @click="deleteBook(scope.row.id)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -247,6 +273,10 @@
             <el-radio value="1">正常</el-radio>
             <el-radio value="0">禁用</el-radio>
           </el-radio-group>
+        </el-form-item>
+        <el-form-item label="每日单词数量" prop="daily_word_limit">
+          <el-input-number v-model="childForm.daily_word_limit" :min="1" :max="100" :step="1" />
+          <span style="margin-left: 10px; font-size: 12px; color: #909399;">默认5个</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -573,11 +603,15 @@
             <el-option label="句子" value="sentence" />
           </el-select>
         </el-form-item>
-        <el-form-item label="年级" prop="grade">
-          <el-input v-model="vocabularyForm.grade" placeholder="请输入年级（如：一年级）" />
-        </el-form-item>
-        <el-form-item label="教材" prop="textbook">
-          <el-input v-model="vocabularyForm.textbook" placeholder="请输入教材（如：人教版）" />
+        <el-form-item label="教材" prop="book_id">
+          <el-select-v2
+            v-model="vocabularyForm.book_id"
+            :options="bookOptions.map(b => ({ label: b.name, value: b.id }))"
+            placeholder="请选择教材"
+            filterable
+            clearable
+            style="width: 100%"
+          />
         </el-form-item>
         <el-form-item label="分类" prop="category">
           <el-input v-model="vocabularyForm.category" placeholder="请输入分类（如：水果）" />
@@ -600,12 +634,22 @@
     <!-- 词汇批量导入对话框 -->
     <el-dialog v-model="vocabularyBatchImportDialogVisible" title="批量导入词汇" width="700px">
       <el-form label-width="100px">
+        <el-form-item label="教材" required>
+          <el-select-v2
+            v-model="batchImportBookId"
+            :options="bookOptions.map(b => ({ label: b.name, value: b.id }))"
+            placeholder="请选择教材"
+            filterable
+            clearable
+            style="width: 100%"
+          />
+        </el-form-item>
         <el-form-item label="导入格式">
-          <p class="import-hint">每行一条词汇，格式：英文|类型（只有英文是必填，类型默认为word）</p>
-          <p class="import-hint">类型选项：word（单词）、sentence（句子）</p>
+          <p class="import-hint">每行一条词汇，直接输入英文内容即可</p>
+          <p class="import-hint">系统会自动判断类型：包含空格、长度较长或以标点结尾的视为句子，否则视为单词</p>
           <p class="import-hint">示例：</p>
-          <p class="import-example">Gesture|word</p>
-          <p class="import-example">Suspicion|word</p>
+          <p class="import-example">Gesture（单词）</p>
+          <p class="import-example">Hello, how are you?（句子）</p>
         </el-form-item>
         <el-form-item label="词汇内容">
           <el-input type="textarea" :rows="10" v-model="vocabularyBatchImportContent" placeholder="请输入要导入的词汇，每行一条" :disabled="vocabularyBatchImportLoading" />
@@ -619,6 +663,21 @@
         <span class="dialog-footer">
           <el-button @click="cancelVocabularyBatchImport" :disabled="vocabularyBatchImportLoading">取消</el-button>
           <el-button type="primary" @click="saveVocabularyBatchImport" :loading="vocabularyBatchImportLoading">导入</el-button>
+        </span>
+      </template>
+    </el-dialog>
+
+    <!-- 教材编辑对话框 -->
+    <el-dialog v-model="bookDialogVisible" :title="editingBook ? '编辑教材' : '添加教材'" width="500px">
+      <el-form :model="bookForm" :rules="bookRules" ref="bookFormRef" label-width="100px">
+        <el-form-item label="教材名称" prop="name">
+          <el-input v-model="bookForm.name" placeholder="请输入教材名称" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="bookDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="saveBook" :loading="bookLoading">保存</el-button>
         </span>
       </template>
     </el-dialog>
@@ -672,7 +731,8 @@ const childForm = ref({
   name: '',
   phone: '',
   email: '',
-  status: 1
+  status: 1,
+  daily_word_limit: 5
 })
 const childRules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
@@ -790,8 +850,7 @@ const vocabularyForm = ref({
   chinese: '',
   phonetic: '',
   type: 'word',
-  grade: '',
-  textbook: '',
+  book_id: '',
   category: '',
   example_sentence: '',
   audio_url: ''
@@ -799,8 +858,13 @@ const vocabularyForm = ref({
 const vocabularyRules = {
   english: [{ required: true, message: '请输入英文', trigger: 'blur' }],
   chinese: [{ required: false, message: '请输入中文', trigger: 'blur' }],
-  type: [{ required: true, message: '请选择类型', trigger: 'change' }]
+  type: [{ required: true, message: '请选择类型', trigger: 'change' }],
+  book_id: [{ required: true, message: '请输入或选择教材', trigger: 'change' }]
 }
+
+// 教材选项
+const bookOptions = ref([])
+const batchImportBookId = ref('')
 const vocabularyFormRef = ref(null)
 const selectedVocabularies = ref([])
 const vocabularyBatchImportContent = ref('')
@@ -810,6 +874,19 @@ const vocabularyImportProgress = ref(0)
 const vocabularyImportCurrentWord = ref('')
 const vocabularyImportStatus = ref('')
 const vocabularyImportAbort = ref(false)
+
+// 教材管理相关
+const books = ref([])
+const bookDialogVisible = ref(false)
+const editingBook = ref(null)
+const bookForm = ref({
+  name: ''
+})
+const bookRules = {
+  name: [{ required: true, message: '请输入教材名称', trigger: 'blur' }]
+}
+const bookFormRef = ref(null)
+const bookLoading = ref(false)
 
 // 加载名言警句列表
 const loadQuotes = async () => {
@@ -1017,37 +1094,131 @@ const loadVocabularies = async () => {
   }
 }
 
+// 加载教材选项
+const loadBookOptions = async () => {
+  try {
+    const response = await api.get('/vocabulary/options/book')
+    bookOptions.value = response.data.books || []
+  } catch (error) {
+    console.error('Failed to load book options:', error)
+  }
+}
+
+// 加载教材列表
+const loadBooks = async () => {
+  try {
+    const response = await api.get('/admin/books')
+    books.value = response.data.books || []
+  } catch (error) {
+    console.error('Failed to load books:', error)
+    ElMessage.error('加载教材列表失败')
+  }
+}
+
+// 根据教材ID获取教材名称
+const getBookName = (bookId) => {
+  if (!bookId) return '-'
+  const book = books.value.find(b => b.id === bookId)
+  return book ? book.name : '-'
+}
+
+// 添加教材
+const addBook = () => {
+  editingBook.value = null
+  bookForm.value = {
+    name: ''
+  }
+  bookDialogVisible.value = true
+}
+
+// 编辑教材
+const editBook = (book) => {
+  editingBook.value = book
+  bookForm.value = {
+    name: book.name
+  }
+  bookDialogVisible.value = true
+}
+
+// 保存教材
+const saveBook = async () => {
+  if (!bookFormRef.value.validate()) return
+
+  bookLoading.value = true
+  try {
+    if (editingBook.value) {
+      await api.put(`/admin/books/${editingBook.value.id}`, bookForm.value)
+      ElMessage.success('更新成功')
+    } else {
+      await api.post('/admin/books', bookForm.value)
+      ElMessage.success('添加成功')
+    }
+    bookDialogVisible.value = false
+    await loadBooks()
+    await loadBookOptions()
+  } catch (error) {
+    console.error('Failed to save book:', error)
+    ElMessage.error('保存失败')
+  } finally {
+    bookLoading.value = false
+  }
+}
+
+// 删除教材
+const deleteBook = async (id) => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除这个教材吗？',
+      '删除确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    await api.delete(`/admin/books/${id}`)
+    ElMessage.success('删除成功')
+    await loadBooks()
+    await loadBookOptions()
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('Failed to delete book:', error)
+      ElMessage.error('删除失败')
+    }
+  }
+}
+
 // 添加词汇
-const addVocabulary = () => {
+const addVocabulary = async () => {
   editingVocabulary.value = null
   vocabularyForm.value = {
     english: '',
     chinese: '',
     phonetic: '',
     type: 'word',
-    grade: '',
-    textbook: '',
+    book_id: '',
     category: '',
     example_sentence: '',
     audio_url: ''
   }
+  await loadBookOptions()
   vocabularyDialogVisible.value = true
 }
 
 // 编辑词汇
-const editVocabulary = (vocabulary) => {
+const editVocabulary = async (vocabulary) => {
   editingVocabulary.value = vocabulary
   vocabularyForm.value = {
     english: vocabulary.english || '',
     chinese: vocabulary.chinese || '',
     phonetic: vocabulary.phonetic || '',
     type: vocabulary.type || 'word',
-    grade: vocabulary.grade || '',
-    textbook: vocabulary.textbook || '',
+    book_id: vocabulary.book_id || '',
     category: vocabulary.category || '',
     example_sentence: vocabulary.example_sentence || '',
     audio_url: vocabulary.audio_url || ''
   }
+  await loadBookOptions()
   vocabularyDialogVisible.value = true
 }
 
@@ -1157,6 +1328,14 @@ const formatProgress = (percentage) => {
   return `${percentage}%`
 }
 
+// 打开词汇批量导入对话框
+const openVocabularyBatchImport = async () => {
+  batchImportBookId.value = ''
+  vocabularyBatchImportContent.value = ''
+  await loadBookOptions()
+  vocabularyBatchImportDialogVisible.value = true
+}
+
 // 取消词汇批量导入
 const cancelVocabularyBatchImport = () => {
   vocabularyImportAbort.value = true
@@ -1167,8 +1346,13 @@ const cancelVocabularyBatchImport = () => {
   vocabularyImportStatus.value = ''
 }
 
-// 批量导入词汇（逐个导入）
+// 批量导入词汇
 const saveVocabularyBatchImport = async () => {
+  // 验证教材
+  if (!batchImportBookId.value) {
+    ElMessage.warning('请选择教材')
+    return
+  }
   if (!vocabularyBatchImportContent.value.trim()) {
     ElMessage.warning('请输入要导入的词汇内容')
     return
@@ -1192,17 +1376,15 @@ const saveVocabularyBatchImport = async () => {
     for (const line of lines) {
       if (!line.trim()) continue
 
-      const parts = line.split('|')
-      const english = parts[0] ? parts[0].trim() : ''
-      const type = parts[1] ? parts[1].trim() : 'word'
-      const chinese = ''
-      const phonetic = ''
-      const grade = ''
-      const textbook = ''
-      const category = ''
+      const english = line.trim()
+      // 自动判断类型：包含空格、长度较长或以标点结尾的视为句子
+      let type = 'word'
+      if (english.includes(' ') || english.length > 10 || /[.!?]$/.test(english)) {
+        type = 'sentence'
+      }
 
       if (english) {
-        vocabularies.push({ english, chinese, phonetic, type, grade, textbook, category })
+        vocabularies.push({ english, type })
       }
     }
 
@@ -1217,53 +1399,87 @@ const saveVocabularyBatchImport = async () => {
     vocabularyImportStatus.value = ''
     vocabularyImportAbort.value = false
 
-    let successCount = 0
-    let errorCount = 0
+    try {
+      // 调用批量导入API（使用Fetch API处理流式响应）
+      const response = await fetch('/api/admin/vocabulary/batch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          vocabularies: vocabularies,
+          book_id: batchImportBookId.value
+        })
+      })
 
-    // 逐个导入词汇
-    for (let i = 0; i < vocabularies.length; i++) {
-      if (vocabularyImportAbort.value) {
-        break
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
 
-      const vocab = vocabularies[i]
-      vocabularyImportCurrentWord.value = vocab.english
-      vocabularyImportStatus.value = '导入中...'
-      vocabularyImportProgress.value = Math.round((i / vocabularies.length) * 100)
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
 
-      try {
-        // 调用创建词汇的API
-        await api.post('/admin/vocabulary', vocab)
-        successCount++
-        vocabularyImportStatus.value = '导入成功'
-      } catch (error) {
-        errorCount++
-        vocabularyImportStatus.value = '导入失败'
-        console.error(`Failed to import vocabulary ${vocab.english}:`, error)
+      while (true) {
+        if (vocabularyImportAbort.value) {
+          reader.cancel()
+          break
+        }
+
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        
+        // 处理每一行JSON
+        const lines = buffer.split('\n')
+        buffer = lines.pop() // 保留不完整的最后一行
+
+        for (const line of lines) {
+          if (!line.trim()) continue
+
+          try {
+            const data = JSON.parse(line)
+            if (data.status === 'processing') {
+              // 更新进度
+              const progress = Math.round((data.current / data.total) * 100)
+              vocabularyImportProgress.value = progress
+              vocabularyImportCurrentWord.value = data.word
+              vocabularyImportStatus.value = `正在导入: ${data.word} (${data.current}/${data.total})`
+            } else if (data.status === 'completed') {
+              // 导入完成
+              vocabularyImportProgress.value = 100
+              vocabularyImportStatus.value = '导入完成'
+              
+              ElMessage.success(`导入完成：成功 ${data.success} 个词汇，重复 ${data.duplicates} 个词汇`)
+              
+              // 关闭对话框并重置状态
+              setTimeout(() => {
+                vocabularyBatchImportDialogVisible.value = false
+                vocabularyBatchImportContent.value = ''
+                batchImportBookId.value = ''
+                vocabularyBatchImportLoading.value = false
+                vocabularyImportProgress.value = 0
+                vocabularyImportCurrentWord.value = ''
+                vocabularyImportStatus.value = ''
+                // 重新加载词汇列表
+                loadVocabularies()
+              }, 1000)
+            }
+          } catch (e) {
+            console.error('Error parsing JSON:', e)
+          }
+        }
       }
-
-      // 短暂延迟，避免请求过于频繁
-      await new Promise(resolve => setTimeout(resolve, 500))
-    }
-
-    // 更新最终进度
-    vocabularyImportProgress.value = 100
-    vocabularyImportStatus.value = '导入完成'
-
-    // 显示导入结果
-    ElMessage.success(`导入完成：成功 ${successCount} 个，失败 ${errorCount} 个`)
-
-    // 关闭对话框并重置状态
-    setTimeout(() => {
-      vocabularyBatchImportDialogVisible.value = false
-      vocabularyBatchImportContent.value = ''
+    } catch (error) {
+      console.error('Failed to batch import vocabulary:', error)
+      ElMessage.error('批量导入失败：' + error.message)
       vocabularyBatchImportLoading.value = false
       vocabularyImportProgress.value = 0
       vocabularyImportCurrentWord.value = ''
       vocabularyImportStatus.value = ''
-      // 重新加载词汇列表
-      loadVocabularies()
-    }, 1000)
+    }
   } catch (error) {
     if (error !== 'cancel') {
       console.error('Failed to batch import vocabulary:', error)
@@ -1280,7 +1496,24 @@ const saveVocabularyBatchImport = async () => {
 const loadChildren = async () => {
   try {
     const response = await api.get('/user/children')
-    children.value = response.data.children
+    const childList = response.data.children
+    
+    // 为每个小孩获取每日单词数量偏好设置
+    for (const child of childList) {
+      try {
+        const prefResponse = await api.get(`/user/preference?key=daily_word_limit&user_id=${child.id}`)
+        if (prefResponse.data.preference) {
+          child.daily_word_limit = parseInt(prefResponse.data.preference.preference_value) || 5
+        } else {
+          child.daily_word_limit = 5
+        }
+      } catch (error) {
+        console.error(`Failed to get daily word limit for child ${child.id}:`, error)
+        child.daily_word_limit = 5
+      }
+    }
+    
+    children.value = childList
   } catch (error) {
     console.error('Failed to load children:', error)
   }
@@ -1308,16 +1541,38 @@ const saveChild = async () => {
     const formData = { ...childForm.value }
     if (!formData.phone) delete formData.phone
     if (!formData.email) delete formData.email
+    // 将状态值转换为整数类型
+    formData.status = parseInt(formData.status)
+    // 提取每日单词数量设置
+    const dailyWordLimit = formData.daily_word_limit
+    delete formData.daily_word_limit
     
+    let childId
     if (editingChild.value) {
       // 更新小孩
       await api.put(`/admin/children/${editingChild.value.id}`, formData)
       ElMessage.success('更新成功')
+      childId = editingChild.value.id
     } else {
       // 添加小孩
-      await api.post('/admin/children', formData)
+      const response = await api.post('/admin/children', formData)
       ElMessage.success('添加成功')
+      childId = response.data.child.id
     }
+    
+    // 保存每日单词数量到用户偏好设置
+    try {
+      await api.post('/user/preference', {
+        key: 'daily_word_limit',
+        value: dailyWordLimit.toString(),
+        user_id: childId
+      })
+      console.log('每日单词数量保存成功')
+    } catch (error) {
+      console.error('保存每日单词数量失败:', error)
+      ElMessage.error('保存每日单词数量失败：' + (error.response?.data?.error || error.message))
+    }
+    
     childDialogVisible.value = false
     await loadChildren()
   } catch (error) {
@@ -1331,7 +1586,11 @@ const saveChild = async () => {
 // 编辑小孩
 const editChild = (child) => {
   editingChild.value = child
-  childForm.value = { ...child }
+  childForm.value = { 
+    ...child,
+    status: child.status.toString(), // 确保状态值是字符串类型
+    daily_word_limit: child.daily_word_limit || 5
+  }
   childDialogVisible.value = true
 }
 
@@ -1810,6 +2069,7 @@ onMounted(async () => {
   await loadExchangeRecords()
   await loadQuotes()
   await loadVocabularies()
+  await loadBooks()
 })
 </script>
 
@@ -1882,5 +2142,15 @@ onMounted(async () => {
   background-color: #f5f7fa;
   padding: 2px 8px;
   border-radius: 4px;
+}
+
+.books-toolbar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.books-table {
+  margin-top: 20px;
 }
 </style>

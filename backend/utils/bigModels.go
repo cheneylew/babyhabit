@@ -3,6 +3,7 @@ package utils
 import (
 	"bytes"
 	"crypto/hmac"
+	"crypto/md5"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -208,8 +209,12 @@ func GenerateSpeech(word string) (string, error) {
 		return "", err
 	}
 
-	// 生成唯一文件名
-	fileName := fmt.Sprintf("%s_%d.mp3", word, time.Now().Unix())
+	// 生成单词的MD5哈希值
+	md5Hash := md5.Sum([]byte(word))
+	md5String := hex.EncodeToString(md5Hash[:])
+
+	// 生成文件名：单词+单词的MD5
+	fileName := fmt.Sprintf("%s_%s.mp3", word, md5String)
 	filePath := filepath.Join(wordsDir, fileName)
 
 	// 写入文件
