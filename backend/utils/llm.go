@@ -13,8 +13,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
+	"unicode"
 )
 
 // min returns the smaller of x or y
@@ -214,11 +214,24 @@ func GenerateSpeech(word string) (string, error) {
 	md5Hash := md5.Sum([]byte(word))
 	md5String := hex.EncodeToString(md5Hash[:])
 
-	// word可能是个句子，里面有空格，需要替换为下划线
-	word = strings.ReplaceAll(word, " ", "_")
+	// 判断是否只包含字母和数字（纯单词）
+	isPureWord := true
+	for _, r := range word {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			isPureWord = false
+			break
+		}
+	}
 
-	// 生成文件名：单词+单词的MD5
-	fileName := fmt.Sprintf("%s_%s.mp3", word, md5String)
+	// 根据是否为纯单词生成不同的文件名
+	var fileName string
+	if isPureWord {
+		// 纯单词，使用单词+MD5
+		fileName = fmt.Sprintf("%s_%s.mp3", word, md5String)
+	} else {
+		// 包含特殊字符或空格，直接用MD5作为文件名
+		fileName = fmt.Sprintf("%s.mp3", md5String)
+	}
 	filePath := filepath.Join(wordsDir, fileName)
 
 	// 写入文件
