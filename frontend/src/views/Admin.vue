@@ -1584,12 +1584,24 @@ const saveChild = async () => {
 }
 
 // 编辑小孩
-const editChild = (child) => {
+const editChild = async (child) => {
   editingChild.value = child
+  
+  // 获取每日单词数量偏好设置
+  let dailyWordLimit = 5
+  try {
+    const prefResponse = await api.get(`/user/preference?key=daily_word_limit&user_id=${child.id}`)
+    if (prefResponse.data.preference) {
+      dailyWordLimit = parseInt(prefResponse.data.preference.preference_value) || 5
+    }
+  } catch (error) {
+    console.error(`Failed to get daily word limit for child ${child.id}:`, error)
+  }
+  
   childForm.value = { 
     ...child,
     status: child.status.toString(), // 确保状态值是字符串类型
-    daily_word_limit: child.daily_word_limit || 5
+    daily_word_limit: dailyWordLimit
   }
   childDialogVisible.value = true
 }
