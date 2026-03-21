@@ -180,10 +180,13 @@
 
         <!-- 词汇管理 -->
         <el-tab-pane label="词汇管理" name="vocabulary">
-          <div class="vocabulary-toolbar">
-            <el-button type="primary" @click="addVocabulary">添加词汇</el-button>
-            <el-button type="success" @click="openVocabularyBatchImport">批量导入</el-button>
-            <el-button type="danger" :disabled="selectedVocabularies.length === 0" @click="batchDeleteVocabularies">批量删除</el-button>
+          <div class="vocabulary-toolbar" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <el-button type="primary" @click="addVocabulary">添加词汇</el-button>
+              <el-button type="success" @click="openVocabularyBatchImport">批量导入</el-button>
+              <el-button type="danger" :disabled="selectedVocabularies.length === 0" @click="batchDeleteVocabularies">批量删除</el-button>
+            </div>
+            <el-button type="info" @click="loadVocabularies">刷新</el-button>
           </div>
           <el-table :data="vocabularies" style="width: 100%" class="vocabulary-table" @selection-change="handleVocabularySelectionChange">
             <el-table-column type="selection" width="55" />
@@ -654,6 +657,9 @@
         <el-form-item label="词汇内容">
           <el-input type="textarea" :rows="10" v-model="vocabularyBatchImportContent" placeholder="请输入要导入的词汇，每行一条" :disabled="vocabularyBatchImportLoading" />
         </el-form-item>
+        <el-form-item label="批量备注">
+          <el-input type="textarea" :rows="3" v-model="batchImportRemark" placeholder="请输入批量备注，将应用于所有导入的词汇（可选）" :disabled="vocabularyBatchImportLoading" />
+        </el-form-item>
         <el-form-item v-if="vocabularyBatchImportLoading">
           <el-progress :percentage="vocabularyImportProgress" :format="formatProgress" />
           <p class="import-progress-text">{{ vocabularyImportCurrentWord }} - {{ vocabularyImportStatus }}</p>
@@ -874,6 +880,7 @@ const vocabularyImportProgress = ref(0)
 const vocabularyImportCurrentWord = ref('')
 const vocabularyImportStatus = ref('')
 const vocabularyImportAbort = ref(false)
+const batchImportRemark = ref('')
 
 // 教材管理相关
 const books = ref([])
@@ -1332,6 +1339,7 @@ const formatProgress = (percentage) => {
 const openVocabularyBatchImport = async () => {
   batchImportBookId.value = ''
   vocabularyBatchImportContent.value = ''
+  batchImportRemark.value = ''
   await loadBookOptions()
   vocabularyBatchImportDialogVisible.value = true
 }
@@ -1344,6 +1352,7 @@ const cancelVocabularyBatchImport = () => {
   vocabularyImportProgress.value = 0
   vocabularyImportCurrentWord.value = ''
   vocabularyImportStatus.value = ''
+  batchImportRemark.value = ''
 }
 
 // 批量导入词汇
@@ -1409,7 +1418,8 @@ const saveVocabularyBatchImport = async () => {
         },
         body: JSON.stringify({
           vocabularies: vocabularies,
-          book_id: batchImportBookId.value
+          book_id: batchImportBookId.value,
+          remark: batchImportRemark.value
         })
       })
 

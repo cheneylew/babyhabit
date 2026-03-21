@@ -84,6 +84,7 @@ func SetupRoutes(router *gin.Engine) {
 		auth.GET("/vocabulary/options/book", controllers.GetBookOptions)
 		auth.POST("/vocabulary/record", controllers.RecordVocabularyLearning)
 		auth.GET("/vocabulary/stats", controllers.GetVocabularyStats)
+		auth.GET("/vocabulary/history", controllers.GetVocabularyHistory)
 		// 生成例句音频
 		auth.POST("/vocabulary/generate-sentence-audio", controllers.GenerateSentenceAudio)
 		// 获取单词意思

@@ -8,11 +8,15 @@
               <el-icon><ArrowLeft /></el-icon>
               返回主页
             </el-button>
-            <h2>艾宾浩斯单词记忆</h2>
+            <h2>单词记忆</h2>
+             <el-button type="info" @click="showLearningHistory" size="small">
+              学习历史
+            </el-button>
           </div>
           <div class="header-stats">
-            <el-statistic :value="todayPlan.newWords" title="今日新单词" />
-            <el-statistic :value="todayPlan.reviewWords" title="今日复习" />
+           
+            <el-statistic :value="`${todayLearnedNewWords}/${todayPlan.newWords || 10}`" title="今日新单词" />
+            <el-statistic :value="`${todayReviewedWords}/${todayPlan.reviewWords || (todayReviewedWords > 0 ? todayReviewedWords : 0)}`" title="今日复习" />
           </div>
         </div>
       </template>
@@ -35,7 +39,7 @@
         </el-select>
       </div>
       <div class="plan-summary">
-        <p>今天需要学习 {{ todayPlan.newWords }} 个新单词，复习 {{ todayPlan.reviewWords }} 个单词</p>
+        <p>今天需要学习 {{ todayPlan.newWords }} 个新单词（已学习 {{ todayLearnedNewWords }} 个），复习 {{ todayPlan.reviewWords || (todayReviewedWords > 0 ? todayReviewedWords : 0) }} 个单词（已复习 {{ todayReviewedWords }} 个）</p>
         <div style="display: flex; gap: 10px; justify-content: center;">
           <el-button type="primary" size="large" @click="startLearning" :disabled="isLearning">
             {{ isLearning ? '学习中...' : '开始学习' }}
@@ -48,6 +52,38 @@
     </el-card>
 
     <el-dialog
+      v-model="historyDialogVisible"
+      title="学习历史"
+      width="90%"
+      :close-on-click-modal="false"
+    >
+      <div v-if="learningHistory.length > 0" class="history-list">
+        <el-table :data="learningHistory" style="width: 100%">
+          <el-table-column prop="english" label="英文" min-width="100">
+            <template #default="scope">
+              <div class="truncate-text">{{ scope.row.english }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="chinese" label="中文" min-width="150">
+            <template #default="scope">
+              <div class="truncate-text">{{ scope.row.chinese }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="type" label="类型" width="100" />
+          <el-table-column prop="learnDate" label="学习日期" width="180" />
+        </el-table>
+      </div>
+      <div v-else class="empty-history">
+        <el-empty description="暂无学习历史" />
+      </div>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="historyDialogVisible = false">关闭</el-button>
+        </span>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="learningDialogVisible"
       title="单词学习"
       width="90%"
@@ -55,7 +91,7 @@
       @close="closeLearning"
     >
       <div v-if="currentWord" class="word-card">
-        <div class="word-info">
+        <div class="word-info" v-show="currentStage === 'recognition' || showWordInfoInMemory">
           <!-- 新单词/复习单词标签 -->
           <div class="word-type-tag" v-if="currentWord.is_new">
             <el-tag type="success" size="small">新单词</el-tag>
@@ -77,11 +113,16 @@
             <el-button size="small" :type="learningMode === 'english' ? 'primary' : ''" @click="learningMode = 'english'">默英文</el-button>
             <el-button size="small" :type="learningMode === 'chinese' ? 'primary' : ''" @click="learningMode = 'chinese'">默中文</el-button>
           </div>
-          <div class="word-example" v-if="currentWord.example_sentence && learningMode === 'normal'">
-            <h4>例句：</h4>
-            <div v-if="typeof currentWord.example_sentence === 'string'">
-              <div v-if="isJsonString(currentWord.example_sentence)">
-                <div v-for="(example, index) in parseJson(currentWord.example_sentence)" :key="index" class="example-item">
+          <div class="word-example" v-if="currentWord && currentWord.example_sentence && learningMode === 'normal'">
+            <div v-if="currentWord && typeof currentWord.example_sentence === 'string'">
+              <div v-if="currentWord && isJsonString(currentWord.example_sentence)">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                  <h4 style="margin: 0;">例句：</h4>
+                  <el-button type="text" size="small" @click="showAllExamples = !showAllExamples" v-if="currentWord && currentWord.example_sentence && parseJson(currentWord.example_sentence).length > 1">
+                    {{ showAllExamples ? '收起' : '更多' }}
+                  </el-button>
+                </div>
+                <div v-for="(example, index) in parseJson(currentWord.example_sentence)" :key="index" class="example-item" v-show="index === 0 || showAllExamples">
                   <div class="example-english-container">
                     <span v-html="processSentenceWords(highlightWordInSentence(example.english, currentWord.english))"></span>
                     <el-button type="primary" size="small" @click="playExampleAudio(example.english)">播放</el-button>
@@ -90,11 +131,18 @@
                 </div>
               </div>
               <div v-else>
-                <p v-html="highlightWordInSentence(currentWord.example_sentence, currentWord.english)"></p>
+                <h4 style="margin: 0 0 10px 0;">例句：</h4>
+                <p v-html="currentWord && highlightWordInSentence(currentWord.example_sentence, currentWord.english)"></p>
               </div>
             </div>
-            <div v-else-if="Array.isArray(currentWord.example_sentence)">
-              <div v-for="(example, index) in currentWord.example_sentence" :key="index" class="example-item">
+            <div v-else-if="currentWord && Array.isArray(currentWord.example_sentence)">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="margin: 0;">例句：</h4>
+                <el-button type="text" size="small" @click="showAllExamples = !showAllExamples" v-if="currentWord && currentWord.example_sentence.length > 1">
+                  {{ showAllExamples ? '收起' : '更多' }}
+                </el-button>
+              </div>
+              <div v-for="(example, index) in currentWord.example_sentence" :key="index" class="example-item" v-show="index === 0 || showAllExamples">
                 <div class="example-english-container">
                   <span v-html="processSentenceWords(highlightWordInSentence(example.english, currentWord.english))"></span>
                   <el-button type="primary" size="small" @click="playExampleAudio(example.english)">播放</el-button>
@@ -106,15 +154,20 @@
         </div>
 
         <div class="learning-stage" v-if="currentStage === 'memory'">
-          <h4>记忆检测</h4>
-          <div v-if="currentCheckType === 'chineseToEnglish'" class="check-section">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h4>记忆检测</h4>
+            <el-button type="info" size="small" @click="showWordInfoInMemory = !showWordInfoInMemory">
+              {{ showWordInfoInMemory ? '隐藏' : '回看' }}
+            </el-button>
+          </div>
+          <div v-if="currentWord && currentCheckType === 'chineseToEnglish'" class="check-section">
             <p class="check-prompt">请根据中文选择正确的英文单词：</p>
             <p class="check-question">{{ currentWord.chinese }}</p>
             <el-radio-group v-model="userAnswer" class="check-options">
               <el-radio v-for="(option, index) in answerOptions" :key="index" :label="option">{{ option }}</el-radio>
             </el-radio-group>
           </div>
-          <div v-else-if="currentCheckType === 'englishToChinese'" class="check-section">
+          <div v-else-if="currentWord && currentCheckType === 'englishToChinese'" class="check-section">
             <p class="check-prompt">请根据英文选择正确的中文意思：</p>
             <p class="check-question">{{ currentWord.english }}</p>
             <el-radio-group v-model="userAnswer" class="check-options">
@@ -145,6 +198,9 @@
 
       <template #footer>
         <span class="dialog-footer">
+          <el-button v-if="currentStage === 'recognition'" type="warning" @click="skipWord">
+            跳过
+          </el-button>
           <el-button @click="closeLearning">退出学习</el-button>
           <el-button v-if="currentStage === 'recognition'" type="primary" @click="nextStage">
             开始记忆检测
@@ -223,6 +279,34 @@
             </el-button>
           </div>
           <p class="word-chinese" v-show="dictationMode === 'normal' || dictationMode === 'chinese' || (dictationMode !== 'english' && dictationCheckType !== 'chineseToEnglish')">{{ currentDictationWord.chinese }}</p>
+          <div class="word-example" v-if="currentDictationWord && currentDictationWord.example_sentence && dictationMode === 'normal'">
+            <div v-if="currentDictationWord && typeof currentDictationWord.example_sentence === 'string'">
+              <div v-if="currentDictationWord && isJsonString(currentDictationWord.example_sentence)">
+                <h4>例句 <el-button type="text" size="small" @click="showAllExamples = !showAllExamples" v-if="currentDictationWord && currentDictationWord.example_sentence && parseJson(currentDictationWord.example_sentence).length > 1">{{ showAllExamples ? '收起' : '更多' }}</el-button></h4>
+                <div v-for="(example, index) in parseJson(currentDictationWord.example_sentence)" :key="index" class="example-item" v-show="index === 0 || showAllExamples">
+                  <div class="example-english-container">
+                    <span v-html="processSentenceWords(highlightWordInSentence(example.english, currentDictationWord.english))"></span>
+                    <el-button type="primary" size="small" @click="playExampleAudio(example.english)">播放</el-button>
+                  </div>
+                  <p class="example-chinese">{{ example.chinese }}</p>
+                </div>
+              </div>
+              <div v-else>
+                <h4>例句</h4>
+                <p v-html="currentDictationWord && highlightWordInSentence(currentDictationWord.example_sentence, currentDictationWord.english)"></p>
+              </div>
+            </div>
+            <div v-else-if="currentDictationWord && Array.isArray(currentDictationWord.example_sentence)">
+              <h4>例句 <el-button type="text" size="small" @click="showAllExamples = !showAllExamples" v-if="currentDictationWord && currentDictationWord.example_sentence.length > 1">{{ showAllExamples ? '收起' : '更多' }}</el-button></h4>
+              <div v-for="(example, index) in currentDictationWord.example_sentence" :key="index" class="example-item" v-show="index === 0 || showAllExamples">
+                <div class="example-english-container">
+                  <span v-html="processSentenceWords(highlightWordInSentence(example.english, currentDictationWord.english))"></span>
+                  <el-button type="primary" size="small" @click="playExampleAudio(example.english)">播放</el-button>
+                </div>
+                <p class="example-chinese">{{ example.chinese }}</p>
+              </div>
+            </div>
+          </div>
           <div class="word-audio">
             <el-button size="small" :type="dictationMode === 'normal' ? 'primary' : ''" @click="dictationMode = 'normal'">看答案</el-button>
             <el-button size="small" :type="dictationMode === 'english' ? 'primary' : ''" @click="dictationMode = 'english'">只看英文</el-button>
@@ -230,17 +314,7 @@
           </div>
         </div>
 
-        <div class="learning-stage">
-          <h4>默写检测</h4>
-          <div v-if="dictationCheckType === 'chineseToEnglish'" class="check-section">
-            <p class="check-prompt">请根据中文默写英文单词：</p>
-            <p class="check-question">{{ currentDictationWord.chinese }}</p>
-          </div>
-          <div v-else-if="dictationCheckType === 'englishToChinese'" class="check-section">
-            <p class="check-prompt">请根据英文默中文意思：</p>
-            <p class="check-question">{{ currentDictationWord.english }}</p>
-          </div>
-        </div>
+
 
         <div class="learning-feedback" v-if="dictationShowFeedback">
           <el-alert
@@ -256,7 +330,7 @@
         <span class="dialog-footer">
           <el-button @click="closeDictation">退出默写</el-button>
           <el-button v-if="!dictationShowFeedback" type="danger" @click="dictationFailed">
-            默写失败
+            还不太会
           </el-button>
           <el-button v-if="!dictationShowFeedback" type="success" @click="submitDictationAnswer">
             默写成功
@@ -283,12 +357,17 @@ const userStore = useUserStore()
 const user = computed(() => userStore.user)
 
 // 学习计划
-const todayPlan = ref({ newWords: 0, reviewWords: 0 })
+const todayPlan = ref({
+  newWords: 0,
+  reviewWords: 0
+})
 const totalWords = ref(0)
 const masteredWords = ref(0)
 const learningStreak = ref(0)
-const accuracyRate = ref(0)
+const accuracyRate = ref('0.0')
 const todayLearnedWords = ref(0)
+const todayLearnedNewWords = ref(0)
+const todayReviewedWords = ref(0)
 
 // 教材选择
 const bookOptions = ref([])
@@ -310,6 +389,12 @@ const isPlaying = ref(false)
 
 // 学习模式：normal (正常), english (默英文), chinese (默中文)
 const learningMode = ref('normal')
+
+// 控制例句显示
+const showAllExamples = ref(false)
+
+// 控制记忆检测时是否显示单词信息
+const showWordInfoInMemory = ref(false)
 
 // 加载教材选项
 const loadBookOptions = async () => {
@@ -379,6 +464,8 @@ const loadTodayPlan = async () => {
     learningStreak.value = response.data.stats.learningStreak
     accuracyRate.value = response.data.stats.accuracyRate
     todayLearnedWords.value = response.data.stats.todayLearnedWords || 0
+    todayLearnedNewWords.value = response.data.stats.todayLearnedNewWords || 0
+    todayReviewedWords.value = response.data.stats.todayReviewedWords || 0
   } catch (error) {
     console.error('Failed to load learning plan:', error)
   }
@@ -387,18 +474,27 @@ const loadTodayPlan = async () => {
 
 
 // 加载下一个单词
-const loadNextWord = async (words) => {
-  if (!words || words.length === 0) {
-    ElMessage.info('没有需要学习的单词')
+const loadNextWord = async () => {
+  if (!currentWords.value || currentWords.value.length === 0) {
+    ElMessageBox.alert(
+      '恭喜你！今天的单词学习任务已经完成，继续保持！',
+      '学习完成',
+      {
+        confirmButtonText: '确定',
+        type: 'success'
+      }
+    )
     closeLearning()
     await loadTodayPlan()
     return
   }
   
-  currentWord.value = words.shift()
+  currentWord.value = currentWords.value.shift()
   currentStage.value = 'recognition'
   showFeedback.value = false
   userAnswer.value = ''
+  showAllExamples.value = false
+  showWordInfoInMemory.value = false
   
   // 生成选项
   await generateAnswerOptions()
@@ -437,6 +533,7 @@ const generateAnswerOptions = async () => {
 // 进入记忆阶段
 const nextStage = () => {
   currentStage.value = 'memory'
+  showWordInfoInMemory.value = false
   // 随机选择检测类型
   const checkTypes = ['chineseToEnglish', 'englishToChinese', 'listening']
   currentCheckType.value = checkTypes[Math.floor(Math.random() * checkTypes.length)]
@@ -451,7 +548,6 @@ const submitAnswer = async () => {
   }
   
   isCorrect.value = userAnswer.value === correctAnswer.value
-  showFeedback.value = true
   
   // 只有当记忆检测通过后，才记录学习结果
   if (isCorrect.value) {
@@ -461,15 +557,26 @@ const submitAnswer = async () => {
         isCorrect: isCorrect.value,
         checkType: currentCheckType.value
       })
+      // 正确时直接进入下一个单词
+      await nextWord()
     } catch (error) {
       console.error('Failed to record learning result:', error)
+      // 出错时显示反馈
+      showFeedback.value = true
     }
+  } else {
+    // 错误时显示反馈
+    showFeedback.value = true
   }
 }
 
 // 下一个单词
 // 存储当前学习的单词列表
 const currentWords = ref([])
+
+// 学习历史相关
+const historyDialogVisible = ref(false)
+const learningHistory = ref([])
 
 const startLearning = async () => {
   try {
@@ -479,13 +586,20 @@ const startLearning = async () => {
       }
     })
     if (!response.data.words || response.data.words.length === 0) {
-      ElMessage.info('今天没有需要学习的单词')
+      ElMessageBox.alert(
+        '恭喜你！今天的单词学习任务已经完成，继续保持！',
+        '学习完成',
+        {
+          confirmButtonText: '确定',
+          type: 'success'
+        }
+      )
       closeLearning()
       return false
     }
     
     // 存储当前学习的单词列表
-    currentWords.value = response.data.words
+    currentWords.value = [...response.data.words]
     
     // 恢复到正常模式
     learningMode.value = 'normal'
@@ -496,7 +610,7 @@ const startLearning = async () => {
     showFeedback.value = false
     
     // 开始学习第一个单词
-    await loadNextWord(currentWords.value)
+    await loadNextWord()
     return true
   } catch (error) {
     console.error('Failed to start learning:', error)
@@ -511,7 +625,7 @@ const nextWord = async () => {
     // 恢复到正常模式
     learningMode.value = 'normal'
     // 继续加载下一个单词
-    await loadNextWord(currentWords.value)
+    await loadNextWord()
   } else {
     // 记忆检测失败，重新开始当前单词的记忆检测
     currentStage.value = 'memory'
@@ -521,6 +635,64 @@ const nextWord = async () => {
     generateAnswerOptions()
     showFeedback.value = false
     userAnswer.value = ''
+  }
+}
+
+// 跳过单词（标记为掌握）
+const skipWord = async () => {
+  try {
+    // 二次确认对话框
+    await ElMessageBox.confirm(
+      '确定要跳过这个单词吗？跳过将标记为已掌握，后续不会再重复学习。',
+      '跳过单词',
+      {
+        confirmButtonText: '确定跳过',
+        cancelButtonText: '取消',
+        type: 'warning',
+        distinguishCancelAndClose: true
+      }
+    )
+
+    // 标记单词为掌握
+    await api.post('/vocabulary/record', {
+      wordId: currentWord.value.id,
+      isCorrect: true,
+      checkType: 'skip',
+      mastered: true
+    })
+    
+    // 从当前单词列表中移除刚刚跳过的单词
+    currentWords.value = currentWords.value.filter(word => word.id !== currentWord.value.id)
+    
+    // 如果是新单词，获取新的单词来补充
+    if (currentWord.value.is_new) {
+      // 获取新的单词列表
+      const response = await api.get('/vocabulary/start', {
+        params: {
+          book_ids: selectedBookIds.value.join(',')
+        }
+      })
+      
+      if (response.data.words && response.data.words.length > 0) {
+        // 过滤掉已经学习过的单词
+        const newWords = response.data.words.filter(word => 
+          !currentWords.value.some(w => w.id === word.id) && 
+          word.id !== currentWord.value.id
+        )
+        
+        // 将新单词添加到当前列表
+        currentWords.value = [...currentWords.value, ...newWords]
+      }
+    }
+    
+    // 加载下一个单词
+    await loadNextWord()
+  } catch (error) {
+    // 如果是用户取消，不显示错误信息
+    if (error !== 'cancel') {
+      console.error('Failed to skip word:', error)
+      ElMessage.error('跳过单词失败：' + (error.response?.data?.error || error.message))
+    }
   }
 }
 
@@ -594,6 +766,9 @@ const isJsonString = (str) => {
 
 // 解析JSON字符串
 const parseJson = (str) => {
+  if (!str) {
+    return []
+  }
   try {
     return JSON.parse(str)
   } catch (error) {
@@ -729,6 +904,21 @@ const closeLearning = async () => {
   await loadTodayPlan()
 }
 
+// 显示学习历史
+const showLearningHistory = async () => {
+  try {
+    const response = await api.get('/vocabulary/history')
+    learningHistory.value = response.data.words.map(word => ({
+      ...word,
+      learnDate: new Date(word.create_time).toLocaleString()
+    }))
+    historyDialogVisible.value = true
+  } catch (error) {
+    console.error('Failed to load learning history:', error)
+    ElMessage.error('加载学习历史失败：' + (error.response?.data?.error || error.message))
+  }
+}
+
 // 返回主页
 const goHome = () => {
   router.push('/')
@@ -804,7 +994,7 @@ const startDictationWithMode = async (words, checkType) => {
   dictationShowFeedback.value = false
   dictationWords.value = words
   
-  // 开始默写第一个单词
+  // 开始默第一个单词
   await loadNextDictationWordWithMode(checkType)
 }
 
@@ -976,6 +1166,13 @@ onUnmounted(() => {
 .header-stats {
   display: flex;
   gap: 30px;
+  align-items: center;
+}
+
+.truncate-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .word-example .highlight-word {
@@ -1022,7 +1219,7 @@ onUnmounted(() => {
 }
 
 .word-card {
-  padding: 20px;
+  padding: 10px;
 }
 
 .word-info {
@@ -1137,7 +1334,7 @@ onUnmounted(() => {
 
 /* 确保对话框内容区域有适当的内边距 */
 .word-card {
-  padding: 20px;
+  padding: 10px;
   max-width: 100%;
   box-sizing: border-box;
   overflow: hidden;
@@ -1202,7 +1399,7 @@ onUnmounted(() => {
 }
 
 .word-card {
-  padding: 20px !important;
+  padding: 10px !important;
   max-width: 100% !important;
   width: 100% !important;
   box-sizing: border-box !important;
@@ -1228,7 +1425,7 @@ onUnmounted(() => {
 }
 
 .word-card {
-  padding: 20px !important;
+  padding: 10px !important;
   max-width: 100% !important;
   box-sizing: border-box !important;
   overflow: hidden !important;

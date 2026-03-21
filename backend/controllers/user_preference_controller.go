@@ -22,7 +22,7 @@ func GetUserPreference(c *gin.Context) {
 
 	// 如果提供了user_id参数且当前用户是管理员，则使用提供的user_id
 	if userIDStr := c.Query("user_id"); userIDStr != "" {
-		if adminUserID, err := strconv.ParseInt(userIDStr, 10, 64); err == nil && adminUserID > 0 && user.UserType == 3 {
+		if adminUserID, err := strconv.ParseInt(userIDStr, 10, 64); err == nil && adminUserID > 0 && user.UserType == 1 {
 			userID = adminUserID
 		}
 	}

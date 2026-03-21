@@ -52,11 +52,26 @@ func GetVocabularyPlan(c *gin.Context) {
 		}
 	}
 
-	// 获取新单词
-	newWords, err := models.GetNewVocabularies(userID, dailyWordLimit, bookIDs)
+	// 获取今日已经学习的新单词数量
+	learnedToday, err := models.GetTodayLearnedNewWordsCount(userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取新单词失败"})
-		return
+		learnedToday = 0
+	}
+
+	// 计算剩余需要学习的新单词数量
+	remainingNewWords := dailyWordLimit - learnedToday
+	if remainingNewWords < 0 {
+		remainingNewWords = 0
+	}
+
+	// 检查是否还有新单词需要学习
+	if remainingNewWords > 0 {
+		// 获取新单词
+		_, err := models.GetNewVocabularies(userID, remainingNewWords, bookIDs)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取新单词失败"})
+			return
+		}
 	}
 
 	// 获取需要复习的单词
@@ -75,7 +90,7 @@ func GetVocabularyPlan(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"plan": gin.H{
-			"newWords":    len(newWords),
+			"newWords":    dailyWordLimit,
 			"reviewWords": len(reviewRecords),
 		},
 		"stats": stats,
@@ -167,13 +182,20 @@ func StartVocabularyLearning(c *gin.Context) {
 			}
 		}
 
+		// 处理 example_sentence
+		exampleSentence := word.ExampleSentence
+		if exampleSentence == nil || *exampleSentence == "null" {
+			null := "[]"
+			exampleSentence = &null
+		}
+
 		words = append(words, map[string]interface{}{
 			"id":               word.ID,
 			"english":          word.English,
 			"chinese":          word.Chinese,
 			"phonetic":         word.Phonetic,
 			"audio_url":        audioURL,
-			"example_sentence": word.ExampleSentence,
+			"example_sentence": exampleSentence,
 			"type":             word.Type,
 			"is_new":           true,
 		})
@@ -191,16 +213,24 @@ func StartVocabularyLearning(c *gin.Context) {
 			}
 		}
 
+		// 处理 example_sentence
+		exampleSentence := record.Vocabulary.ExampleSentence
+		if exampleSentence == nil || *exampleSentence == "null" {
+			null := "[]"
+			exampleSentence = &null
+		}
+
 		words = append(words, map[string]interface{}{
 			"id":                 record.Vocabulary.ID,
 			"english":            record.Vocabulary.English,
 			"chinese":            record.Vocabulary.Chinese,
 			"phonetic":           record.Vocabulary.Phonetic,
 			"audio_url":          audioURL,
-			"example_sentence":   record.Vocabulary.ExampleSentence,
+			"example_sentence":   exampleSentence,
 			"type":               record.Vocabulary.Type,
 			"is_new":             false,
 			"learning_record_id": record.ID,
+			"remark":             record.Vocabulary.Remark,
 		})
 	}
 
@@ -256,6 +286,7 @@ func RecordVocabularyLearning(c *gin.Context) {
 		WordID    int    `json:"wordId"`
 		IsCorrect bool   `json:"isCorrect"`
 		CheckType string `json:"checkType"`
+		Mastered  bool   `json:"mastered"`
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -268,7 +299,7 @@ func RecordVocabularyLearning(c *gin.Context) {
 	isNewRecord := false
 	if err != nil {
 		// 记录不存在，创建新记录
-		err = models.CreateLearningRecord(userID, request.WordID)
+		err = models.CreateLearningRecord(userID, request.WordID, request.CheckType)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "创建学习记录失败"})
 			return
@@ -284,7 +315,12 @@ func RecordVocabularyLearning(c *gin.Context) {
 	}
 
 	// 更新学习记录
-	err = models.UpdateLearningRecord(record.ID, request.IsCorrect)
+	if request.Mastered {
+		// 直接标记为掌握
+		err = models.MarkVocabularyAsMastered(record.ID, request.CheckType)
+	} else {
+		err = models.UpdateLearningRecord(record.ID, request.IsCorrect)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新学习记录失败"})
 		return
@@ -292,7 +328,7 @@ func RecordVocabularyLearning(c *gin.Context) {
 
 	// 创建或更新学习打卡记录
 	newWordsCount := 0
-	if isNewRecord {
+	if isNewRecord && request.CheckType != "skip" {
 		newWordsCount = 1
 	}
 	reviewWordsCount := 0
@@ -335,6 +371,27 @@ func GetVocabularyStats(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"stats": stats,
+	})
+}
+
+// GetVocabularyHistory 获取学习历史
+func GetVocabularyHistory(c *gin.Context) {
+	user := c.MustGet("user").(*models.User)
+	userID := user.ID
+
+	if userID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+
+	history, err := models.GetLearningHistory(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取学习历史失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"words": history,
 	})
 }
 
@@ -561,6 +618,7 @@ func BatchCreateVocabulary(c *gin.Context) {
 	var request struct {
 		Vocabularies []models.Vocabulary `json:"vocabularies"`
 		BookID       int                 `json:"book_id"`
+		Remark       string              `json:"remark"`
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -619,6 +677,10 @@ func BatchCreateVocabulary(c *gin.Context) {
 		// 为每个词汇创建新的实例
 		currentVocab := vocab
 		currentVocab.BookID = &request.BookID
+		// 设置备注
+		if request.Remark != "" {
+			currentVocab.Remark = &request.Remark
+		}
 
 		// 生成完整的单词信息（重试机制）
 		var wordInfo *utils.WordInfo
@@ -950,15 +1012,24 @@ func GetVocabularyDictation(c *gin.Context) {
 		frontendStaticURL = "http://localhost:8000"
 	}
 
-	// 获取今天已经学习的单词
+	// 获取今天已经学习的单词（新单词）
 	learnedWords, err := models.GetTodayLearnedWords(userID, bookIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取今日学习单词失败"})
 		return
 	}
 
+	// 获取今天复习的单词
+	reviewedWords, err := models.GetTodayReviewedWords(userID, bookIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取今日复习单词失败"})
+		return
+	}
+
 	// 处理单词列表
 	var words []map[string]interface{}
+
+	// 处理新单词
 	for _, record := range learnedWords {
 		vocab := record["Vocabulary"].(*models.Vocabulary)
 		isNew := record["IsNew"].(bool)
@@ -982,6 +1053,32 @@ func GetVocabularyDictation(c *gin.Context) {
 			"example_sentence": vocab.ExampleSentence,
 			"type":             vocab.Type,
 			"is_new":           isNew,
+		})
+	}
+
+	// 处理复习单词
+	for _, record := range reviewedWords {
+		vocab := record["Vocabulary"].(*models.Vocabulary)
+
+		audioURL := ""
+		if vocab.AudioURL != nil && *vocab.AudioURL != "" {
+			// 检查是否已经是完整的URL
+			if strings.HasPrefix(*vocab.AudioURL, "http://") || strings.HasPrefix(*vocab.AudioURL, "https://") {
+				audioURL = *vocab.AudioURL
+			} else {
+				audioURL = frontendStaticURL + *vocab.AudioURL
+			}
+		}
+
+		words = append(words, map[string]interface{}{
+			"id":               vocab.ID,
+			"english":          vocab.English,
+			"chinese":          vocab.Chinese,
+			"phonetic":         vocab.Phonetic,
+			"audio_url":        audioURL,
+			"example_sentence": vocab.ExampleSentence,
+			"type":             vocab.Type,
+			"is_new":           false,
 		})
 	}
 
@@ -1016,7 +1113,7 @@ func RecordVocabularyDictation(c *gin.Context) {
 	isNewRecord := false
 	if err != nil {
 		// 记录不存在，创建新记录
-		err = models.CreateLearningRecord(userID, request.WordID)
+		err = models.CreateLearningRecord(userID, request.WordID, request.CheckType)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "创建学习记录失败"})
 			return
