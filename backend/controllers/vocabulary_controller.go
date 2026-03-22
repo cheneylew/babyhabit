@@ -1265,13 +1265,20 @@ func GetVocabularyDictation(c *gin.Context) {
 			}
 		}
 
+		// 处理 example_sentence 为 "null" 字符串的情况
+		exampleSentence := vocab.ExampleSentence
+		if exampleSentence != nil && *exampleSentence == "null" {
+			emptyArray := "[]"
+			exampleSentence = &emptyArray
+		}
+
 		words = append(words, map[string]interface{}{
 			"id":               vocab.ID,
 			"english":          vocab.English,
 			"chinese":          vocab.Chinese,
 			"phonetic":         vocab.Phonetic,
 			"audio_url":        audioURL,
-			"example_sentence": vocab.ExampleSentence,
+			"example_sentence": exampleSentence,
 			"type":             vocab.Type,
 			"is_new":           isNew,
 		})
@@ -1291,13 +1298,20 @@ func GetVocabularyDictation(c *gin.Context) {
 			}
 		}
 
+		// 处理 example_sentence 为 "null" 字符串的情况
+		exampleSentence := vocab.ExampleSentence
+		if exampleSentence != nil && *exampleSentence == "null" {
+			emptyArray := "[]"
+			exampleSentence = &emptyArray
+		}
+
 		words = append(words, map[string]interface{}{
 			"id":               vocab.ID,
 			"english":          vocab.English,
 			"chinese":          vocab.Chinese,
 			"phonetic":         vocab.Phonetic,
 			"audio_url":        audioURL,
-			"example_sentence": vocab.ExampleSentence,
+			"example_sentence": exampleSentence,
 			"type":             vocab.Type,
 			"is_new":           false,
 		})

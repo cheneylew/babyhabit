@@ -316,14 +316,7 @@
 
 
 
-        <div class="learning-feedback" v-if="dictationShowFeedback">
-          <el-alert
-            :title="dictationIsCorrect ? '正确！' : '错误！'"
-            :type="dictationIsCorrect ? 'success' : 'error'"
-            show-icon
-          />
-          <p v-if="!dictationIsCorrect" class="correct-answer">正确答案：{{ dictationCorrectAnswer }}</p>
-        </div>
+
       </div>
 
       <template #footer>
@@ -1061,7 +1054,6 @@ const playDictationAudio = () => {
 const submitDictationAnswer = async () => {
   // 用户点击默写成功，直接记录成功结果
   dictationIsCorrect.value = true
-  dictationShowFeedback.value = true
   
   // 记录默写结果
   try {
@@ -1070,6 +1062,8 @@ const submitDictationAnswer = async () => {
       isCorrect: true,
       checkType: dictationCheckType.value
     })
+    // 直接进入下一个单词
+    await nextDictationWord()
   } catch (error) {
     console.error('Failed to record dictation result:', error)
   }
@@ -1078,9 +1072,10 @@ const submitDictationAnswer = async () => {
 // 默写失败
 const dictationFailed = async () => {
   dictationIsCorrect.value = false
-  dictationShowFeedback.value = true
   // 显示完整的单词信息，相当于点击了"正常"按钮
   dictationMode.value = 'normal'
+  // 显示下一个按钮
+  dictationShowFeedback.value = true
   
   // 记录默写失败的单词到艾宾浩斯不会的单词逻辑
   try {
