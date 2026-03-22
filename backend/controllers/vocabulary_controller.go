@@ -1017,35 +1017,44 @@ func Chat(c *gin.Context) {
 
 // ChatStream 流式聊天接口
 func ChatStream(c *gin.Context) {
+	fmt.Println("[ChatStream] 开始处理流式聊天请求")
+
 	var request struct {
 		Prompt string `json:"prompt"`
 	}
 
 	if err := c.ShouldBindJSON(&request); err != nil {
+		fmt.Printf("[ChatStream] 请求数据解析失败: %v\n", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求数据"})
 		return
 	}
 
 	if request.Prompt == "" {
+		fmt.Println("[ChatStream] 提示词为空")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "提示词不能为空"})
 		return
 	}
+
+	fmt.Printf("[ChatStream] 收到提示词: %s\n", request.Prompt)
 
 	// 设置响应头为流式响应
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
+	fmt.Println("[ChatStream] 设置响应头完成")
 
 	// 创建一个通道，用于接收前台的结束信号
 	done := make(chan bool)
 
 	// 启动一个 goroutine，监听前台的结束信号
 	go func() {
+		fmt.Println("[ChatStream] 启动监听前台结束信号的 goroutine")
 		// 读取前台发送的结束信号
 		buffer := make([]byte, 1024)
 		for {
 			n, err := c.Request.Body.Read(buffer)
 			if err != nil {
+				fmt.Printf("[ChatStream] 读取请求体失败: %v，关闭 done 通道\n", err)
 				// 当连接关闭时，发送结束信号
 				close(done)
 				break
@@ -1053,8 +1062,10 @@ func ChatStream(c *gin.Context) {
 			if n > 0 {
 				// 检查是否收到终止信号
 				message := string(buffer[:n])
+				fmt.Printf("[ChatStream] 收到前台消息: %s\n", message)
 				if message == "stop" {
 					// 收到终止信号，关闭通道
+					fmt.Println("[ChatStream] 收到终止信号，关闭 done 通道")
 					close(done)
 					break
 				}
@@ -1063,22 +1074,38 @@ func ChatStream(c *gin.Context) {
 	}()
 
 	// 调用流式聊天函数
+	fmt.Println("[ChatStream] 调用 utils.ChatStream 函数")
 	err := utils.ChatStream(request.Prompt, func(chunk string) bool {
+		fmt.Printf("[ChatStream] 收到 AI 响应 chunk: %s\n", chunk)
 		// 发送数据到前台
-		fmt.Fprintf(c.Writer, "data: %s\n\n", chunk)
+		_, writeErr := fmt.Fprintf(c.Writer, "data: %s\n\n", chunk)
+		if writeErr != nil {
+			fmt.Printf("[ChatStream] 写入响应失败: %v\n", writeErr)
+			return false
+		}
 		c.Writer.Flush()
+		fmt.Println("[ChatStream] 响应已刷新")
 		return true
 	}, done)
 
 	if err != nil {
 		// 发送错误信息
-		fmt.Fprintf(c.Writer, "data: {\"error\":\"%s\"}\n\n", err.Error())
+		fmt.Printf("[ChatStream] 流式聊天失败: %v\n", err)
+		_, writeErr := fmt.Fprintf(c.Writer, "data: {\"error\":\"%s\"}\n\n", err.Error())
+		if writeErr != nil {
+			fmt.Printf("[ChatStream] 写入错误响应失败: %v\n", writeErr)
+		}
 		c.Writer.Flush()
 	}
 
 	// 发送结束信号
-	fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
+	fmt.Println("[ChatStream] 发送结束信号")
+	_, writeErr := fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
+	if writeErr != nil {
+		fmt.Printf("[ChatStream] 写入结束信号失败: %v\n", writeErr)
+	}
 	c.Writer.Flush()
+	fmt.Println("[ChatStream] 请求处理完成")
 }
 
 // CreateBook 创建教材（管理员）

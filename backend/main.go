@@ -18,7 +18,7 @@ func main() {
 	}
 
 	// 测试chat接口
-	test()
+	// test()
 
 	// 初始化数据库（暂时注释，以便测试服务器启动）
 	if err := config.InitDatabase(); err != nil {

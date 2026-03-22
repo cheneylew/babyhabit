@@ -624,6 +624,7 @@
         </el-form-item>
         <el-form-item label="例句" prop="example_sentence">
           <el-input type="textarea" :rows="3" v-model="vocabularyForm.example_sentence" placeholder="请输入例句（可选）" />
+          <el-button type="primary" plain size="small" @click="regenerateExampleSentence" :loading="regeneratingExample">重新生成</el-button>
         </el-form-item>
         <el-form-item label="音频URL" prop="audio_url">
           <el-input v-model="vocabularyForm.audio_url" placeholder="请输入音频URL（可选）" />
@@ -724,6 +725,30 @@
         <span class="dialog-footer">
           <el-button @click="bookDialogVisible = false">取消</el-button>
           <el-button type="primary" @click="saveBook" :loading="bookLoading">保存</el-button>
+        </span>
+      </template>
+    </el-dialog>
+
+    <!-- 重新生成例句对话框 -->
+    <el-dialog v-model="regenerateExampleDialogVisible" title="重新生成例句" width="600px">
+      <div v-if="!regeneratingExample">
+        <p>正在为单词 "{{ vocabularyForm.english }}" 生成例句...</p>
+        <el-progress :percentage="regenerateExampleProgress" />
+        <p class="regenerate-progress-text" v-if="regenerateExampleStatus">{{ regenerateExampleStatus }}</p>
+        <div v-if="regenerateExampleCurrentContent" class="regenerate-current-content">
+          <p>生成中：</p>
+          <el-input type="textarea" :rows="4" v-model="regenerateExampleCurrentContent" readonly />
+        </div>
+      </div>
+      <div v-else-if="regenerateExampleResult">
+        <p>生成的例句：</p>
+        <el-input type="textarea" :rows="4" v-model="regenerateExampleResult" readonly />
+        <p class="regenerate-hint">如果觉得合适，请点击"确认"按钮将例句回填到编辑表单中</p>
+      </div>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="cancelRegenerateExample" :disabled="regeneratingExample">取消</el-button>
+          <el-button v-if="regenerateExampleResult" type="primary" @click="confirmRegenerateExample">确认</el-button>
         </span>
       </template>
     </el-dialog>
@@ -889,6 +914,14 @@ const vocabularyPage = ref(1)
 const vocabularyPageSize = ref(10)
 const vocabularyTotal = ref(0)
 const vocabularyDialogVisible = ref(false)
+// 重新生成例句相关
+const regeneratingExample = ref(false)
+const regenerateExampleDialogVisible = ref(false)
+const regenerateExampleProgress = ref(0)
+const regenerateExampleStatus = ref('')
+const regenerateExampleResult = ref('')
+const regenerateExampleCurrentContent = ref('')
+let controller = null
 const vocabularyBatchImportDialogVisible = ref(false)
 const editingVocabulary = ref(null)
 const vocabularyForm = ref({
@@ -2256,6 +2289,137 @@ onMounted(async () => {
   await loadVocabularies()
   await loadBooks()
 })
+
+// 重新生成例句
+const regenerateExampleSentence = async () => {
+  if (!vocabularyForm.value.english) {
+    ElMessage.warning('请输入英文单词或句子')
+    return
+  }
+
+  // 打开对话框
+  regenerateExampleDialogVisible.value = true
+  regenerateExampleProgress.value = 0
+  regenerateExampleStatus.value = '正在生成例句...'
+  regenerateExampleResult.value = ''
+  regenerateExampleCurrentContent.value = ''
+  regeneratingExample.value = false
+
+  try {
+    // 调用流式聊天接口生成例句
+    const prompt = `为单词 "${vocabularyForm.value.english}" 生成5个例句，每个例句包含英文和中文翻译，格式为 JSON 数组，例如：[{"english":"例句1","chinese":"翻译1"},{"english":"例句2","chinese":"翻译2"}]`
+    
+    // 创建一个 AbortController 用于终止请求
+    controller = new AbortController()
+    const signal = controller.signal
+
+    // 发送请求
+    const response = await fetch('/api/chat/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + userStore.token
+      },
+      body: JSON.stringify({ prompt }),
+      signal
+    })
+
+    if (!response.ok) {
+      throw new Error('请求失败：' + response.statusText)
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let result = ''
+
+    // 读取流式响应
+    let receivedChunks = 0
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      const chunk = decoder.decode(value, { stream: true })
+      const lines = chunk.split('\n')
+      
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.substring(6).trim()
+          if (data === '[DONE]') {
+            break
+          }
+          if (data) {
+            // 处理空格：如果上一个字符是字母或数字，当前字符也是字母或数字，则添加空格
+            if (result.length > 0) {
+              const lastChar = result[result.length - 1]
+              const firstChar = data[0]
+              if ((/[a-zA-Z0-9]/.test(lastChar)) && (/[a-zA-Z0-9]/.test(firstChar))) {
+                result += ' '
+              }
+            }
+            result += data
+            regenerateExampleCurrentContent.value = result
+            receivedChunks++
+            // 更新进度，基于接收的chunk数量
+            regenerateExampleProgress.value = Math.min(100, Math.round((receivedChunks / 20) * 100))
+            regenerateExampleStatus.value = `正在生成... (${receivedChunks})`
+            console.log('Received chunk:', data)
+            console.log('Current content:', regenerateExampleCurrentContent.value)
+            console.log('Progress:', regenerateExampleProgress.value)
+          }
+        }
+      }
+    }
+
+    // 尝试解析结果
+    try {
+      // 清理结果，确保是有效的 JSON
+      const cleanedResult = result.replace(/^[^{\[]+/, '').replace(/[^\]}]+$/, '')
+      const parsedResult = JSON.parse(cleanedResult)
+      // 转换为字符串
+      regenerateExampleResult.value = JSON.stringify(parsedResult, null, 2)
+      regenerateExampleStatus.value = '生成完成'
+      regenerateExampleProgress.value = 100
+      regeneratingExample.value = true
+      // 清空当前内容
+      regenerateExampleCurrentContent.value = ''
+    } catch (parseError) {
+      // 如果解析失败，显示原始结果
+      regenerateExampleResult.value = result
+      regenerateExampleStatus.value = '生成完成（解析失败，显示原始结果）'
+      regenerateExampleProgress.value = 100
+      regeneratingExample.value = true
+      // 清空当前内容
+      regenerateExampleCurrentContent.value = ''
+    }
+  } catch (error) {
+    ElMessage.error('生成例句失败：' + error.message)
+    regenerateExampleDialogVisible.value = false
+  }
+}
+
+// 确认重新生成例句
+const confirmRegenerateExample = () => {
+  vocabularyForm.value.example_sentence = regenerateExampleResult.value
+  regenerateExampleDialogVisible.value = false
+  regeneratingExample.value = false
+  ElMessage.success('例句已更新')
+}
+
+// 取消重新生成例句
+const cancelRegenerateExample = () => {
+  // 取消正在进行的流式请求
+  if (controller) {
+    controller.abort()
+  }
+  // 关闭对话框
+  regenerateExampleDialogVisible.value = false
+  // 重置状态
+  regeneratingExample.value = false
+  regenerateExampleProgress.value = 0
+  regenerateExampleStatus.value = ''
+  regenerateExampleResult.value = ''
+  regenerateExampleCurrentContent.value = ''
+}
 </script>
 
 <style scoped>

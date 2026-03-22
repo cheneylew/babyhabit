@@ -775,13 +775,19 @@ func ChatStream(prompt string, callback func(string) bool, done chan bool) error
 
 	// 流式读取响应
 	scanner := bufio.NewScanner(resp.Body)
+	// 标记done通道是否已关闭
+	doneClosed := false
+
 	for scanner.Scan() {
-		// 检查done通道是否为nil
-		if done != nil {
+		// 检查done通道是否为nil且未关闭
+		if done != nil && !doneClosed {
 			select {
-			case <-done:
-				// 前台请求结束
-				return nil
+			case _, ok := <-done:
+				// 检查通道是否已关闭
+				if !ok {
+					doneClosed = true
+					fmt.Println("[ChatStream] done通道已关闭，继续处理剩余响应")
+				}
 			default:
 				// 继续处理
 			}
@@ -789,6 +795,7 @@ func ChatStream(prompt string, callback func(string) bool, done chan bool) error
 
 		// 读取一行数据
 		line := scanner.Text()
+		fmt.Printf("[ChatStream] 收到响应行: %s\n", line)
 
 		// 跳过空行
 		if line == "" {
@@ -802,10 +809,12 @@ func ChatStream(prompt string, callback func(string) bool, done chan bool) error
 
 		// 提取 JSON 部分
 		jsonStr := strings.TrimPrefix(line, "data: ")
+		fmt.Printf("[ChatStream] 提取的JSON: %s\n", jsonStr)
 
 		// 检查是否是结束标记
 		if jsonStr == "[DONE]" {
 			// 流结束
+			fmt.Println("[ChatStream] 收到结束标记")
 			return nil
 		}
 
@@ -813,7 +822,8 @@ func ChatStream(prompt string, callback func(string) bool, done chan bool) error
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content string `json:"content"`
+					Content          string `json:"content"`
+					ReasoningContent string `json:"reasoning_content"`
 				} `json:"delta"`
 				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
@@ -828,14 +838,25 @@ func ChatStream(prompt string, callback func(string) bool, done chan bool) error
 
 		// 处理每个chunk
 		for _, choice := range chunk.Choices {
+			// 处理 content 字段
 			if choice.Delta.Content != "" {
+				fmt.Printf("[ChatStream] 处理chunk内容 (content): %s\n", choice.Delta.Content)
 				// 调用回调函数，返回false表示停止
 				if !callback(choice.Delta.Content) {
 					return nil
 				}
 			}
+			// 处理 reasoning_content 字段
+			if choice.Delta.ReasoningContent != "" {
+				fmt.Printf("[ChatStream] 处理chunk内容 (reasoning_content): %s\n", choice.Delta.ReasoningContent)
+				// 调用回调函数，返回false表示停止
+				if !callback(choice.Delta.ReasoningContent) {
+					return nil
+				}
+			}
 			if choice.FinishReason != "" {
 				// 生成完成
+				fmt.Printf("[ChatStream] 收到完成标记: %s\n", choice.FinishReason)
 				return nil
 			}
 		}
