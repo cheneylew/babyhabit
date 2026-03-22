@@ -186,7 +186,10 @@
               <el-button type="success" @click="openVocabularyBatchImport">批量导入</el-button>
               <el-button type="danger" :disabled="selectedVocabularies.length === 0" @click="batchDeleteVocabularies">批量删除</el-button>
             </div>
-            <el-button type="info" @click="loadVocabularies">刷新</el-button>
+            <div style="display: flex; gap: 10px;">
+              <el-button type="warning" @click="detectIncompleteVocabularies">检测</el-button>
+              <el-button type="info" @click="loadVocabularies">刷新</el-button>
+            </div>
           </div>
           <el-table :data="vocabularies" style="width: 100%" class="vocabulary-table" @selection-change="handleVocabularySelectionChange">
             <el-table-column type="selection" width="55" />
@@ -673,6 +676,43 @@
       </template>
     </el-dialog>
 
+    <!-- 词汇检测对话框 -->
+    <el-dialog v-model="vocabularyDetectDialogVisible" title="词汇检测" width="800px">
+      <div v-if="!vocabularyDetectLoading && incompleteVocabularies.length > 0">
+        <p class="detect-hint">检测到以下词汇缺少AI生成的信息（中文、音标、例句或发音）：</p>
+        <el-table :data="incompleteVocabularies" style="width: 100%" class="detect-table">
+          <el-table-column prop="id" label="ID" width="80" />
+          <el-table-column prop="english" label="英文" width="200" />
+          <el-table-column prop="chinese" label="中文" width="150" show-overflow-tooltip />
+          <el-table-column prop="phonetic" label="音标" width="150" show-overflow-tooltip />
+          <el-table-column prop="type" label="类型" width="100" />
+          <el-table-column label="状态" width="150">
+            <template #default="scope">
+              <div>
+                <span v-if="!scope.row.chinese" class="status-missing">缺少中文</span>
+                <span v-if="!scope.row.phonetic" class="status-missing">缺少音标</span>
+                <span v-if="!scope.row.example_sentence" class="status-missing">缺少例句</span>
+                <span v-if="!scope.row.audio_url" class="status-missing">缺少发音</span>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <div v-else-if="!vocabularyDetectLoading && incompleteVocabularies.length === 0">
+        <el-empty description="未检测到缺少AI生成信息的词汇" />
+      </div>
+      <div v-else>
+        <el-progress :percentage="vocabularyDetectProgress" :format="formatProgress" />
+        <p class="import-progress-text">{{ vocabularyDetectCurrentWord }} - {{ vocabularyDetectStatus }}</p>
+      </div>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="vocabularyDetectDialogVisible = false" :disabled="vocabularyDetectLoading">关闭</el-button>
+          <el-button v-if="!vocabularyDetectLoading && incompleteVocabularies.length > 0" type="primary" @click="regenerateVocabularies">重新生成</el-button>
+        </span>
+      </template>
+    </el-dialog>
+
     <!-- 教材编辑对话框 -->
     <el-dialog v-model="bookDialogVisible" :title="editingBook ? '编辑教材' : '添加教材'" width="500px">
       <el-form :model="bookForm" :rules="bookRules" ref="bookFormRef" label-width="100px">
@@ -881,6 +921,15 @@ const vocabularyImportCurrentWord = ref('')
 const vocabularyImportStatus = ref('')
 const vocabularyImportAbort = ref(false)
 const batchImportRemark = ref('')
+
+// 词汇检测相关
+const vocabularyDetectDialogVisible = ref(false)
+const incompleteVocabularies = ref([])
+const vocabularyDetectLoading = ref(false)
+const vocabularyDetectProgress = ref(0)
+const vocabularyDetectCurrentWord = ref('')
+const vocabularyDetectStatus = ref('')
+const vocabularyDetectAbort = ref(false)
 
 // 教材管理相关
 const books = ref([])
@@ -1353,6 +1402,120 @@ const cancelVocabularyBatchImport = () => {
   vocabularyImportCurrentWord.value = ''
   vocabularyImportStatus.value = ''
   batchImportRemark.value = ''
+}
+
+// 检测缺少AI生成信息的词汇
+const detectIncompleteVocabularies = async () => {
+  try {
+    vocabularyDetectLoading.value = true
+    vocabularyDetectProgress.value = 0
+    vocabularyDetectCurrentWord.value = ''
+    vocabularyDetectStatus.value = '正在检测...'
+    
+    const response = await api.get('/admin/vocabulary/incomplete')
+    incompleteVocabularies.value = response.data.vocabularies || []
+    
+    vocabularyDetectLoading.value = false
+    vocabularyDetectDialogVisible.value = true
+  } catch (error) {
+    console.error('Failed to detect incomplete vocabularies:', error)
+    ElMessage.error('检测失败：' + (error.response?.data?.error || error.message))
+    vocabularyDetectLoading.value = false
+  }
+}
+
+// 重新生成词汇的AI信息
+const regenerateVocabularies = async () => {
+  if (incompleteVocabularies.value.length === 0) {
+    ElMessage.warning('没有需要重新生成的词汇')
+    return
+  }
+  
+  try {
+    await ElMessageBox.confirm(
+      `确定要重新生成 ${incompleteVocabularies.value.length} 个词汇的AI信息吗？`,
+      '重新生成确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'info',
+      }
+    )
+    
+    vocabularyDetectLoading.value = true
+    vocabularyDetectProgress.value = 0
+    vocabularyDetectCurrentWord.value = ''
+    vocabularyDetectStatus.value = '正在重新生成...'
+    
+    // 构建词汇ID列表
+    const vocabularyIds = incompleteVocabularies.value.map(v => v.id)
+    
+    // 发送重新生成请求
+    const response = await fetch(api.defaults.baseURL + '/admin/vocabulary/regenerate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify({ ids: vocabularyIds })
+    })
+    
+    if (!response.ok) {
+      throw new Error('重新生成失败')
+    }
+    
+    // 处理流式响应
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      
+      const chunk = decoder.decode(value, { stream: true })
+      const lines = chunk.split('\n')
+      
+      for (const line of lines) {
+        if (!line.trim()) continue
+        
+        try {
+          const data = JSON.parse(line)
+          if (data.status === 'progress') {
+            // 更新进度
+            const progress = Math.round((data.current / data.total) * 100)
+            vocabularyDetectProgress.value = progress
+            vocabularyDetectCurrentWord.value = data.word
+            vocabularyDetectStatus.value = `正在重新生成: ${data.word} (${data.current}/${data.total})`
+          } else if (data.status === 'completed') {
+            // 重新生成完成
+            vocabularyDetectProgress.value = 100
+            vocabularyDetectStatus.value = '重新生成完成'
+            
+            ElMessage.success(`重新生成完成：成功 ${data.success} 个词汇`)
+            
+            // 关闭对话框并重置状态
+            setTimeout(() => {
+              vocabularyDetectDialogVisible.value = false
+              vocabularyDetectLoading.value = false
+              vocabularyDetectProgress.value = 0
+              vocabularyDetectCurrentWord.value = ''
+              vocabularyDetectStatus.value = ''
+              // 重新加载词汇列表
+              loadVocabularies()
+            }, 1000)
+          }
+        } catch (e) {
+          console.error('Error parsing JSON:', e)
+        }
+      }
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('Failed to regenerate vocabularies:', error)
+      ElMessage.error('重新生成失败：' + (error.response?.data?.error || error.message))
+    }
+    vocabularyDetectLoading.value = false
+  }
 }
 
 // 批量导入词汇

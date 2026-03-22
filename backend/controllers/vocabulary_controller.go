@@ -887,6 +887,200 @@ func GetBook(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"book": book})
 }
 
+// GetIncompleteVocabularies 获取缺少AI生成信息的词汇（管理员）
+func GetIncompleteVocabularies(c *gin.Context) {
+	vocabularies, err := models.GetIncompleteVocabularies()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取缺少AI生成信息的词汇失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"vocabularies": vocabularies,
+	})
+}
+
+// RegenerateVocabularies 重新生成词汇的AI信息（管理员）
+func RegenerateVocabularies(c *gin.Context) {
+	var request struct {
+		IDs []int `json:"ids"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求数据"})
+		return
+	}
+
+	// 设置响应头为JSON流
+	c.Header("Content-Type", "application/json")
+	c.Header("Transfer-Encoding", "chunked")
+
+	// 开始逐个处理词汇
+	successCount := 0
+	totalCount := len(request.IDs)
+
+	for i, id := range request.IDs {
+		// 获取词汇信息
+		vocab, err := models.GetVocabularyByID(id)
+		if err != nil {
+			// 发送错误信息
+			fmt.Fprintf(c.Writer, `{"status":"progress","current":%d,"total":%d,"word":"%s","error":"%s"}\n`, i+1, totalCount, "", err.Error())
+			c.Writer.Flush()
+			continue
+		}
+
+		// 生成完整的单词信息（重试机制）
+		var wordInfo *utils.WordInfo
+		var infoErr error
+		maxRetries := 3
+		for retry := 0; retry < maxRetries; retry++ {
+			wordInfo, infoErr = utils.GenerateWordInfo(vocab.English)
+			if infoErr == nil && wordInfo != nil {
+				break
+			}
+			// 重试间隔
+			time.Sleep(time.Second * time.Duration(retry+1))
+		}
+
+		// 处理单词信息
+		if infoErr == nil && wordInfo != nil {
+			// 设置中文翻译
+			vocab.Chinese = wordInfo.Chinese
+
+			// 设置音标（将PhoneticInfo转换为JSON字符串）
+			phoneticJSON, err := json.Marshal(wordInfo.Phonetic)
+			if err == nil {
+				phoneticStr := string(phoneticJSON)
+				vocab.Phonetic = &phoneticStr
+			}
+
+			// 设置例句（将[]Example转换为JSON字符串）
+			examplesJSON, err := json.Marshal(wordInfo.Examples)
+			if err == nil {
+				examplesStr := string(examplesJSON)
+				vocab.ExampleSentence = &examplesStr
+			}
+
+			// 设置分类
+			category := wordInfo.Category
+			vocab.Category = &category
+
+			// 设置音频URL
+			if wordInfo.AudioURL != "" {
+				vocab.AudioURL = &wordInfo.AudioURL
+			}
+
+			// 更新词汇
+			err = models.UpdateVocabulary(vocab)
+			if err == nil {
+				successCount++
+			}
+		}
+
+		// 发送进度信息
+		fmt.Fprintf(c.Writer, `{"status":"progress","current":%d,"total":%d,"word":"%s"}\n`, i+1, totalCount, vocab.English)
+		c.Writer.Flush()
+	}
+
+	// 发送完成信息
+	fmt.Fprintf(c.Writer, `{"status":"completed","success":%d,"total":%d}\n`, successCount, totalCount)
+	c.Writer.Flush()
+}
+
+// Chat 聊天接口
+func Chat(c *gin.Context) {
+	var request struct {
+		Prompt string `json:"prompt"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求数据"})
+		return
+	}
+
+	if request.Prompt == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "提示词不能为空"})
+		return
+	}
+
+	// 调用聊天函数
+	response, err := utils.Chat(request.Prompt)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "聊天失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"response": response,
+	})
+}
+
+// ChatStream 流式聊天接口
+func ChatStream(c *gin.Context) {
+	var request struct {
+		Prompt string `json:"prompt"`
+	}
+
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求数据"})
+		return
+	}
+
+	if request.Prompt == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "提示词不能为空"})
+		return
+	}
+
+	// 设置响应头为流式响应
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+
+	// 创建一个通道，用于接收前台的结束信号
+	done := make(chan bool)
+
+	// 启动一个 goroutine，监听前台的结束信号
+	go func() {
+		// 读取前台发送的结束信号
+		buffer := make([]byte, 1024)
+		for {
+			n, err := c.Request.Body.Read(buffer)
+			if err != nil {
+				// 当连接关闭时，发送结束信号
+				close(done)
+				break
+			}
+			if n > 0 {
+				// 检查是否收到终止信号
+				message := string(buffer[:n])
+				if message == "stop" {
+					// 收到终止信号，关闭通道
+					close(done)
+					break
+				}
+			}
+		}
+	}()
+
+	// 调用流式聊天函数
+	err := utils.ChatStream(request.Prompt, func(chunk string) bool {
+		// 发送数据到前台
+		fmt.Fprintf(c.Writer, "data: %s\n\n", chunk)
+		c.Writer.Flush()
+		return true
+	}, done)
+
+	if err != nil {
+		// 发送错误信息
+		fmt.Fprintf(c.Writer, "data: {\"error\":\"%s\"}\n\n", err.Error())
+		c.Writer.Flush()
+	}
+
+	// 发送结束信号
+	fmt.Fprintf(c.Writer, "data: [DONE]\n\n")
+	c.Writer.Flush()
+}
+
 // CreateBook 创建教材（管理员）
 func CreateBook(c *gin.Context) {
 	var book models.Book

@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/hmac"
 	"crypto/md5"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 	"unicode"
 )
@@ -638,4 +640,212 @@ func GetWordMeaning(word string) (string, error) {
 	}
 
 	return respData.Choices[0].Message.Content, nil
+}
+
+// 封装一个通用chat接口，提示词由前台来定
+func Chat(prompt string) (string, error) {
+	// 从环境变量获取配置
+	apiKey := os.Getenv("TEXT_API_KEY")
+	modelID := os.Getenv("TEXT_MODEL_ID")
+	if apiKey == "" || modelID == "" {
+		return "", fmt.Errorf("TEXT_API_KEY or TEXT_MODEL_ID not set")
+	}
+
+	// 准备请求数据
+	reqData := TextGenerationRequest{
+		Model: modelID,
+	}
+	reqData.Messages = append(reqData.Messages, struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}{Role: "user", Content: prompt})
+	reqData.Parameters.MaxTokens = 1000
+	reqData.Parameters.Temperature = 0.7
+
+	data, err := json.Marshal(reqData)
+	if err != nil {
+		return "", err
+	}
+
+	// 发送请求
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequest("POST", "https://ark.cn-beijing.volces.com/api/v3/chat/completions", bytes.NewBuffer(data))
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API request failed: %s", string(body))
+	}
+
+	// 解析响应
+	var respData struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&respData); err != nil {
+		return "", err
+	}
+
+	if len(respData.Choices) == 0 {
+		return "", fmt.Errorf("no response from model")
+	}
+
+	return respData.Choices[0].Message.Content, nil
+}
+
+// 封装一个流式chat接口，前台可以结束掉
+func ChatStream(prompt string, callback func(string) bool, done chan bool) error {
+	// 从环境变量获取配置
+	apiKey := os.Getenv("TEXT_API_KEY")
+	modelID := os.Getenv("TEXT_MODEL_ID")
+	if apiKey == "" || modelID == "" {
+		return fmt.Errorf("TEXT_API_KEY or TEXT_MODEL_ID not set")
+	}
+
+	// 准备请求数据
+	reqData := struct {
+		Model    string `json:"model"`
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+		Parameters struct {
+			MaxTokens   int     `json:"max_tokens"`
+			Temperature float64 `json:"temperature"`
+		} `json:"parameters"`
+		Stream bool `json:"stream"`
+	}{
+		Model:  modelID,
+		Stream: true,
+	}
+	reqData.Messages = append(reqData.Messages, struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}{Role: "user", Content: prompt})
+	reqData.Parameters.MaxTokens = 1000
+	reqData.Parameters.Temperature = 0.7
+
+	data, err := json.Marshal(reqData)
+	if err != nil {
+		return err
+	}
+
+	// 发送请求
+	client := &http.Client{Timeout: 60 * time.Second}
+	req, err := http.NewRequest("POST", "https://ark.cn-beijing.volces.com/api/v3/chat/completions", bytes.NewBuffer(data))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API request failed: %s", string(body))
+	}
+
+	// 打印响应头，以便调试
+	fmt.Println("Response Headers:")
+	for key, values := range resp.Header {
+		for _, value := range values {
+			fmt.Printf("%s: %s\n", key, value)
+		}
+	}
+
+	// 流式读取响应
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		// 检查done通道是否为nil
+		if done != nil {
+			select {
+			case <-done:
+				// 前台请求结束
+				return nil
+			default:
+				// 继续处理
+			}
+		}
+
+		// 读取一行数据
+		line := scanner.Text()
+
+		// 跳过空行
+		if line == "" {
+			continue
+		}
+
+		// 检查是否以 "data: " 开头
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		// 提取 JSON 部分
+		jsonStr := strings.TrimPrefix(line, "data: ")
+
+		// 检查是否是结束标记
+		if jsonStr == "[DONE]" {
+			// 流结束
+			return nil
+		}
+
+		// 解析 JSON
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content string `json:"content"`
+				} `json:"delta"`
+				FinishReason string `json:"finish_reason"`
+			} `json:"choices"`
+		}
+		err := json.Unmarshal([]byte(jsonStr), &chunk)
+		if err != nil {
+			// 记录错误，以便调试
+			fmt.Printf("Error decoding JSON: %v\n", err)
+			fmt.Printf("JSON string: %s\n", jsonStr)
+			continue
+		}
+
+		// 处理每个chunk
+		for _, choice := range chunk.Choices {
+			if choice.Delta.Content != "" {
+				// 调用回调函数，返回false表示停止
+				if !callback(choice.Delta.Content) {
+					return nil
+				}
+			}
+			if choice.FinishReason != "" {
+				// 生成完成
+				return nil
+			}
+		}
+	}
+
+	// 检查扫描错误
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	// 流结束
+	return nil
 }

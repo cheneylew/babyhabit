@@ -828,6 +828,50 @@ func DeleteVocabulary(id int) error {
 	return tx.Commit()
 }
 
+// GetIncompleteVocabularies 获取缺少AI生成信息的词汇
+func GetIncompleteVocabularies() ([]*Vocabulary, error) {
+	query := `
+		SELECT id, english, chinese, phonetic, audio_url, example_sentence, type, book_id, category, remark, create_time
+		FROM ab_vocabulary
+		WHERE chinese IS NULL OR phonetic IS NULL OR example_sentence IS NULL OR audio_url IS NULL
+		ORDER BY id DESC
+	`
+
+	rows, err := config.DB.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var vocabularies []*Vocabulary
+	for rows.Next() {
+		var vocab Vocabulary
+		var phonetic, audioURL, exampleSentence, category, remark *string
+		var bookID *int
+		err := rows.Scan(
+			&vocab.ID, &vocab.English, &vocab.Chinese, &phonetic,
+			&audioURL, &exampleSentence, &vocab.Type, &bookID, &category, &remark, &vocab.CreateTime,
+		)
+		if err != nil {
+			return nil, err
+		}
+		vocab.Phonetic = phonetic
+		vocab.AudioURL = audioURL
+		vocab.ExampleSentence = exampleSentence
+		vocab.BookID = bookID
+		vocab.Category = category
+		vocab.Remark = remark
+		vocabularies = append(vocabularies, &vocab)
+	}
+
+	// 确保返回空数组而不是nil
+	if vocabularies == nil {
+		return []*Vocabulary{}, nil
+	}
+
+	return vocabularies, nil
+}
+
 // GetVocabulariesByBookID 根据教材ID获取词汇列表
 func GetVocabulariesByBookID(bookID int) ([]*Vocabulary, error) {
 	query := `SELECT id, english FROM ab_vocabulary WHERE book_id = ?`

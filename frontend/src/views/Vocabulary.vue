@@ -198,20 +198,20 @@
 
       <template #footer>
         <span class="dialog-footer">
-          <el-button v-if="currentStage === 'recognition'" type="warning" @click="skipWord">
+          <el-button style="float: left;" v-if="currentStage === 'recognition'" type="warning" @click="skipWord" size="small">
             跳过
           </el-button>
-          <el-button @click="closeLearning">退出学习</el-button>
-          <el-button v-if="currentStage === 'recognition'" type="primary" @click="nextStage">
-            开始记忆检测
+          <el-button @click="closeLearning" style="float: left;" size="small">退出</el-button>
+          <el-button v-if="currentStage === 'recognition'" type="primary" @click="nextStage" size="small">
+            开始检测
           </el-button>
-          <el-button v-else-if="!showFeedback" type="primary" @click="submitAnswer">
+          <el-button v-else-if="!showFeedback" type="primary" @click="submitAnswer" size="small">
             提交答案
           </el-button>
-          <el-button v-else-if="isCorrect" type="primary" @click="nextWord">
+          <el-button v-else-if="isCorrect" type="primary" @click="nextWord" size="small">
             下一个
           </el-button>
-          <el-button v-else type="warning" @click="nextWord">
+          <el-button v-else type="warning" @click="nextWord" size="small">
             重新尝试
           </el-button>
         </span>
@@ -328,14 +328,14 @@
 
       <template #footer>
         <span class="dialog-footer">
-          <el-button @click="closeDictation">退出默写</el-button>
-          <el-button v-if="!dictationShowFeedback" type="danger" @click="dictationFailed">
+          <el-button style="float: left;" @click="closeDictation" size="small">退出</el-button>
+          <el-button v-if="!dictationShowFeedback" type="danger" @click="dictationFailed" size="small">
             还不太会
           </el-button>
-          <el-button v-if="!dictationShowFeedback" type="success" @click="submitDictationAnswer">
+          <el-button v-if="!dictationShowFeedback" type="success" @click="submitDictationAnswer" size="small">
             默写成功
           </el-button>
-          <el-button v-else type="primary" @click="nextDictationWord">
+          <el-button v-else type="primary" @click="nextDictationWord" size="small">
             下一个
           </el-button>
         </span>
@@ -503,7 +503,7 @@ const loadNextWord = async () => {
   setTimeout(() => {
     playAudio()
     setTimeout(() => {
-      // playAudio()
+      playAudio()
       setTimeout(() => {
         // playAudio()
       }, 2000)

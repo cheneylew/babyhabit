@@ -92,6 +92,9 @@ func SetupRoutes(router *gin.Engine) {
 		// 默写单词API
 		auth.GET("/vocabulary/dictation", controllers.GetVocabularyDictation)
 		auth.POST("/vocabulary/dictation/record", controllers.RecordVocabularyDictation)
+		// 聊天API
+		auth.POST("/chat", controllers.Chat)
+		auth.POST("/chat/stream", controllers.ChatStream)
 
 		// 用户偏好设置API
 		auth.GET("/user/preferences", controllers.GetUserPreferences)
@@ -144,11 +147,13 @@ func SetupRoutes(router *gin.Engine) {
 		// 词汇学习管理
 		admin.POST("/vocabulary", controllers.CreateVocabulary)
 		admin.GET("/vocabulary", controllers.GetVocabularies)
+		admin.POST("/vocabulary/batch", controllers.BatchCreateVocabulary)
+		admin.DELETE("/vocabulary/batch", controllers.BatchDeleteVocabulary)
+		admin.GET("/vocabulary/incomplete", controllers.GetIncompleteVocabularies)
+		admin.POST("/vocabulary/regenerate", controllers.RegenerateVocabularies)
 		admin.GET("/vocabulary/:id", controllers.GetVocabulary)
 		admin.PUT("/vocabulary/:id", controllers.UpdateVocabulary)
 		admin.DELETE("/vocabulary/:id", controllers.DeleteVocabulary)
-		admin.POST("/vocabulary/batch", controllers.BatchCreateVocabulary)
-		admin.DELETE("/vocabulary/batch", controllers.BatchDeleteVocabulary)
 
 		// 教材管理
 		admin.GET("/books", controllers.GetBooks)
