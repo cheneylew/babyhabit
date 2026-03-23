@@ -15,8 +15,8 @@
           </div>
           <div class="header-stats">
            
-            <el-statistic :value="`${todayLearnedNewWords}/${todayPlan.newWords || 10}`" title="今日新单词" />
-            <el-statistic :value="`${todayReviewedWords}/${todayPlan.reviewWords || (todayReviewedWords > 0 ? todayReviewedWords : 0)}`" title="今日复习" />
+            <el-statistic :value="`${todayLearnedNewWords}/${todayPlan.newWords || 0}`" title="今日新单词" />
+            <el-statistic :value="`${todayReviewedWords}/${todayPlan.reviewWords+todayReviewedWords || (todayReviewedWords > 0 ? todayReviewedWords : 0)}`" title="今日复习" />
           </div>
         </div>
       </template>

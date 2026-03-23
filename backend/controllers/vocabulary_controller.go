@@ -52,10 +52,38 @@ func GetVocabularyPlan(c *gin.Context) {
 		}
 	}
 
+	// 获取用户每日单词复习量上限偏好设置，默认为18个
+	dailyReviewLimit := 18
+	reviewPreference, err := models.GetUserPreference(userID, "daily_review_limit")
+	if err == nil && reviewPreference != nil {
+		if limit, err := strconv.Atoi(reviewPreference.PreferenceValue); err == nil && limit > 0 {
+			dailyReviewLimit = limit
+		}
+	}
+
 	// 获取今日已经学习的新单词数量
 	learnedToday, err := models.GetTodayLearnedNewWordsCount(userID)
 	if err != nil {
 		learnedToday = 0
+	}
+
+	// 获取需要复习的单词
+	reviewRecords, err := models.GetDueReviewVocabularies(userID, bookIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取复习单词失败"})
+		return
+	}
+
+	// 学习统计
+	stats, err := models.GetLearningStats(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取学习统计失败"})
+		return
+	}
+
+	// 如果复习单词数量超过上限，则今日不学习新单词
+	if len(reviewRecords)+stats["todayReviewedWords"].(int) >= dailyReviewLimit {
+		dailyWordLimit = 0
 	}
 
 	// 计算剩余需要学习的新单词数量
@@ -72,20 +100,6 @@ func GetVocabularyPlan(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取新单词失败"})
 			return
 		}
-	}
-
-	// 获取需要复习的单词
-	reviewRecords, err := models.GetDueReviewVocabularies(userID, bookIDs)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取复习单词失败"})
-		return
-	}
-
-	// 学习统计
-	stats, err := models.GetLearningStats(userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取学习统计失败"})
-		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -147,6 +161,33 @@ func StartVocabularyLearning(c *gin.Context) {
 		}
 	}
 
+	// 获取用户每日单词复习量上限偏好设置，默认为18个
+	dailyReviewLimit := 18
+	reviewPreference, err := models.GetUserPreference(userID, "daily_review_limit")
+	if err == nil && reviewPreference != nil {
+		if limit, err := strconv.Atoi(reviewPreference.PreferenceValue); err == nil && limit > 0 {
+			dailyReviewLimit = limit
+		}
+	}
+
+	// 获取需要复习的单词
+	reviewRecords, err := models.GetDueReviewVocabularies(userID, bookIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取复习单词失败"})
+		return
+	}
+
+	// 学习统计
+	todayReviewedWords, err := models.StatGetTodayReviewedWords(userID)
+	if err != nil {
+		todayReviewedWords = 0
+	}
+
+	// 如果复习单词数量超过上限，则今日不学习新单词
+	if len(reviewRecords)+todayReviewedWords >= dailyReviewLimit {
+		dailyWordLimit = 0
+	}
+
 	// 计算今天还可以学习的新单词数量
 	remainingNewWords := dailyWordLimit - learnedToday
 	if remainingNewWords < 0 {
@@ -157,13 +198,6 @@ func StartVocabularyLearning(c *gin.Context) {
 	newWords, err := models.GetNewVocabularies(userID, remainingNewWords, bookIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取新单词失败"})
-		return
-	}
-
-	// 获取需要复习的单词
-	reviewRecords, err := models.GetDueReviewVocabularies(userID, bookIDs)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取复习单词失败"})
 		return
 	}
 

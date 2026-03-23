@@ -490,9 +490,7 @@ func GetLearningStats(userID int64) (map[string]interface{}, error) {
 	stats["todayLearnedNewWords"] = todayLearnedNewWords
 
 	// 今日复习单词数
-	var todayReviewedWords int
-	query = `SELECT COUNT(*) FROM ab_learning_record WHERE user_id = ? AND DATE(update_time) = CURRENT_DATE AND DATE(create_time) != CURRENT_DATE`
-	err = config.DB.QueryRow(query, userID).Scan(&todayReviewedWords)
+	todayReviewedWords, err := StatGetTodayReviewedWords(userID)
 	if err != nil {
 		todayReviewedWords = 0
 	}
@@ -533,6 +531,17 @@ func GetLearningStats(userID int64) (map[string]interface{}, error) {
 	stats["accuracyRate"] = fmt.Sprintf("%.1f", accuracyRate)
 
 	return stats, nil
+}
+
+func StatGetTodayReviewedWords(userID int64) (int, error) {
+	// 今日复习单词数
+	var todayReviewedWords int
+	query := `SELECT COUNT(*) FROM ab_learning_record WHERE user_id = ? AND DATE(update_time) = CURRENT_DATE AND DATE(create_time) != CURRENT_DATE`
+	err := config.DB.QueryRow(query, userID).Scan(&todayReviewedWords)
+	if err != nil {
+		return 0, err
+	}
+	return todayReviewedWords, nil
 }
 
 // CreateStudyCheckin 创建学习打卡记录

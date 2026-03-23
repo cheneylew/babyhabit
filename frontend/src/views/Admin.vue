@@ -294,6 +294,10 @@
           <el-input-number v-model="childForm.daily_word_limit" :min="1" :max="100" :step="1" />
           <span style="margin-left: 10px; font-size: 12px; color: #909399;">默认5个</span>
         </el-form-item>
+        <el-form-item label="每日复习量上限" prop="daily_review_limit">
+          <el-input-number v-model="childForm.daily_review_limit" :min="1" :max="100" :step="1" />
+          <span style="margin-left: 10px; font-size: 12px; color: #909399;">默认18个</span>
+        </el-form-item>
       </el-form>
       <template #footer>
         <span class="dialog-footer">
@@ -1733,18 +1737,28 @@ const loadChildren = async () => {
     const response = await api.get('/user/children')
     const childList = response.data.children
     
-    // 为每个小孩获取每日单词数量偏好设置
+    // 为每个小孩获取每日单词数量和复习量上限偏好设置
     for (const child of childList) {
       try {
-        const prefResponse = await api.get(`/user/preference?key=daily_word_limit&user_id=${child.id}`)
-        if (prefResponse.data.preference) {
-          child.daily_word_limit = parseInt(prefResponse.data.preference.preference_value) || 5
+        // 获取每日单词数量
+        const wordLimitResponse = await api.get(`/user/preference?key=daily_word_limit&user_id=${child.id}`)
+        if (wordLimitResponse.data.preference) {
+          child.daily_word_limit = parseInt(wordLimitResponse.data.preference.preference_value) || 5
         } else {
           child.daily_word_limit = 5
         }
+        
+        // 获取每日复习量上限
+        const reviewLimitResponse = await api.get(`/user/preference?key=daily_review_limit&user_id=${child.id}`)
+        if (reviewLimitResponse.data.preference) {
+          child.daily_review_limit = parseInt(reviewLimitResponse.data.preference.preference_value) || 18
+        } else {
+          child.daily_review_limit = 18
+        }
       } catch (error) {
-        console.error(`Failed to get daily word limit for child ${child.id}:`, error)
+        console.error(`Failed to get preferences for child ${child.id}:`, error)
         child.daily_word_limit = 5
+        child.daily_review_limit = 18
       }
     }
     
@@ -1778,9 +1792,11 @@ const saveChild = async () => {
     if (!formData.email) delete formData.email
     // 将状态值转换为整数类型
     formData.status = parseInt(formData.status)
-    // 提取每日单词数量设置
+    // 提取每日单词数量和复习量上限设置
     const dailyWordLimit = formData.daily_word_limit
+    const dailyReviewLimit = formData.daily_review_limit
     delete formData.daily_word_limit
+    delete formData.daily_review_limit
     
     let childId
     if (editingChild.value) {
@@ -1808,6 +1824,19 @@ const saveChild = async () => {
       ElMessage.error('保存每日单词数量失败：' + (error.response?.data?.error || error.message))
     }
     
+    // 保存每日复习量上限到用户偏好设置
+    try {
+      await api.post('/user/preference', {
+        key: 'daily_review_limit',
+        value: dailyReviewLimit.toString(),
+        user_id: childId
+      })
+      console.log('每日复习量上限保存成功')
+    } catch (error) {
+      console.error('保存每日复习量上限失败:', error)
+      ElMessage.error('保存每日复习量上限失败：' + (error.response?.data?.error || error.message))
+    }
+    
     childDialogVisible.value = false
     await loadChildren()
   } catch (error) {
@@ -1833,10 +1862,22 @@ const editChild = async (child) => {
     console.error(`Failed to get daily word limit for child ${child.id}:`, error)
   }
   
+  // 获取每日复习量上限偏好设置
+  let dailyReviewLimit = 18
+  try {
+    const reviewPrefResponse = await api.get(`/user/preference?key=daily_review_limit&user_id=${child.id}`)
+    if (reviewPrefResponse.data.preference) {
+      dailyReviewLimit = parseInt(reviewPrefResponse.data.preference.preference_value) || 18
+    }
+  } catch (error) {
+    console.error(`Failed to get daily review limit for child ${child.id}:`, error)
+  }
+  
   childForm.value = { 
     ...child,
     status: child.status.toString(), // 确保状态值是字符串类型
-    daily_word_limit: dailyWordLimit
+    daily_word_limit: dailyWordLimit,
+    daily_review_limit: dailyReviewLimit
   }
   childDialogVisible.value = true
 }
