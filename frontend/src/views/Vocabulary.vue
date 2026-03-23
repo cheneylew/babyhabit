@@ -87,6 +87,7 @@
       v-model="learningDialogVisible"
       title="单词学习"
       width="90%"
+      top="10px"
       :close-on-click-modal="false"
       @close="closeLearning"
     >
@@ -258,6 +259,7 @@
       v-model="dictationDialogVisible"
       title="默写单词"
       width="90%"
+      top="10px"
       :close-on-click-modal="false"
       @close="closeDictation"
     >
@@ -282,7 +284,7 @@
           <div class="word-example" v-if="currentDictationWord && currentDictationWord.example_sentence && dictationMode === 'normal'">
             <div v-if="currentDictationWord && typeof currentDictationWord.example_sentence === 'string'">
               <div v-if="currentDictationWord && isJsonString(currentDictationWord.example_sentence)">
-                <h4>例句 <el-button type="text" size="small" @click="showAllExamples = !showAllExamples" v-if="currentDictationWord && currentDictationWord.example_sentence && parseJson(currentDictationWord.example_sentence).length > 1">{{ showAllExamples ? '收起' : '更多' }}</el-button></h4>
+                <h4>例句 <el-button style="float: right;" type="text" size="small" @click="showAllExamples = !showAllExamples" v-if="currentDictationWord && currentDictationWord.example_sentence && parseJson(currentDictationWord.example_sentence).length > 1">{{ showAllExamples ? '收起' : '更多' }}</el-button></h4>
                 <div v-for="(example, index) in parseJson(currentDictationWord.example_sentence)" :key="index" class="example-item" v-show="index === 0 || showAllExamples">
                   <div class="example-english-container">
                     <span v-html="processSentenceWords(highlightWordInSentence(example.english, currentDictationWord.english))"></span>
@@ -545,11 +547,15 @@ const submitAnswer = async () => {
   // 只有当记忆检测通过后，才记录学习结果
   if (isCorrect.value) {
     try {
-      await api.post('/vocabulary/record', {
+      const requestData = {
         wordId: currentWord.value.id,
-        isCorrect: isCorrect.value,
-        checkType: currentCheckType.value
-      })
+        isCorrect: isCorrect.value
+      }
+      // 只有当 checkType 为 'skip' 时才传递
+      if (currentCheckType.value === 'skip') {
+        requestData.checkType = currentCheckType.value
+      }
+      await api.post('/vocabulary/record', requestData)
       // 正确时直接进入下一个单词
       await nextWord()
     } catch (error) {
@@ -1057,11 +1063,15 @@ const submitDictationAnswer = async () => {
   
   // 记录默写结果
   try {
-    await api.post('/vocabulary/dictation/record', {
+    const requestData = {
       wordId: currentDictationWord.value.id,
-      isCorrect: true,
-      checkType: dictationCheckType.value
-    })
+      isCorrect: true
+    }
+    // 只有当 checkType 为 'skip' 时才传递
+    if (dictationCheckType.value === 'skip') {
+      requestData.checkType = dictationCheckType.value
+    }
+    await api.post('/vocabulary/dictation/record', requestData)
     // 直接进入下一个单词
     await nextDictationWord()
   } catch (error) {
@@ -1079,11 +1089,15 @@ const dictationFailed = async () => {
   
   // 记录默写失败的单词到艾宾浩斯不会的单词逻辑
   try {
-    await api.post('/vocabulary/dictation/record', {
+    const requestData = {
       wordId: currentDictationWord.value.id,
-      isCorrect: false,
-      checkType: dictationCheckType.value
-    })
+      isCorrect: false
+    }
+    // 只有当 checkType 为 'skip' 时才传递
+    if (dictationCheckType.value === 'skip') {
+      requestData.checkType = dictationCheckType.value
+    }
+    await api.post('/vocabulary/dictation/record', requestData)
   } catch (error) {
     console.error('Failed to record dictation result:', error)
   }

@@ -4,6 +4,7 @@ import (
 	"babyhabit/config"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -90,6 +91,36 @@ func GetRewardItems(status int) ([]*RewardItem, error) {
 			 WHERE status = ? 
 			 ORDER BY create_time DESC`
 	rows, err := config.DB.Query(query, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []*RewardItem{}
+	for rows.Next() {
+		item := &RewardItem{}
+		err := rows.Scan(
+			&item.ID, &item.Name, &item.Description, &item.Image, &item.Category, &item.PointsRequired,
+			&item.Stock, &item.ExchangeLimit, &item.UserExchanged, &item.StartTime, &item.EndTime,
+			&item.CreatorID, &item.CreateTime, &item.UpdateTime, &item.Status,
+		)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+// GetRewardItemsByCreatorID 根据创建者ID获取奖励物品列表
+func GetRewardItemsByCreatorID(creatorID int64, status int) ([]*RewardItem, error) {
+	query := `SELECT id, name, description, image, category, points_required, stock, 
+			 exchange_limit, user_exchanged, start_time, end_time, creator_id, 
+			 create_time, update_time, status 
+			 FROM reward_item 
+			 WHERE creator_id = ? AND status = ? 
+			 ORDER BY create_time DESC`
+	rows, err := config.DB.Query(query, creatorID, status)
 	if err != nil {
 		return nil, err
 	}
@@ -256,6 +287,50 @@ func GetAllExchangeRecords() ([]*ExchangeRecord, error) {
 			 JOIN user u ON er.user_id = u.id
 			 ORDER BY er.create_time DESC`
 	rows, err := config.DB.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	records := []*ExchangeRecord{}
+	for rows.Next() {
+		record := &ExchangeRecord{}
+		item := &RewardItem{}
+		var userName string
+		err := rows.Scan(
+			&record.ID, &record.UserID, &record.ItemID, &item.Name, &item.Image, &item.Category, &record.Points, &record.Quantity,
+			&record.ExchangeTime, &record.DeliveryInfo, &record.Status, &record.CreateTime,
+			&record.UpdateTime, &userName,
+		)
+		if err != nil {
+			return nil, err
+		}
+		record.Item = item
+		// 将用户名放入 Item 的 Description 字段中（临时方案）
+		item.Description = userName
+		records = append(records, record)
+	}
+	return records, nil
+}
+
+// GetExchangeRecordsByUserIDs 根据用户ID列表获取兑换记录
+func GetExchangeRecordsByUserIDs(userIDs []int64) ([]*ExchangeRecord, error) {
+	// 构建IN查询的参数
+	placeholders := make([]string, len(userIDs))
+	args := make([]interface{}, len(userIDs))
+	for i, id := range userIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := `SELECT er.id, er.user_id, er.item_id, er.item_name, er.item_image, er.item_category, er.points, er.quantity, er.exchange_time, 
+			 er.delivery_info, er.status, er.create_time, er.update_time,
+			 u.name as user_name
+			 FROM exchange_record er 
+			 JOIN user u ON er.user_id = u.id
+			 WHERE er.user_id IN (` + strings.Join(placeholders, ",") + `)
+			 ORDER BY er.create_time DESC`
+	rows, err := config.DB.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}

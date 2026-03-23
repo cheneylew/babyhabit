@@ -186,3 +186,25 @@ func GetAllChildren() ([]*User, error) {
 	}
 	return children, nil
 }
+
+// GetChildIDsByParentID 根据父母ID获取孩子ID列表
+func GetChildIDsByParentID(parentID int64) ([]int64, error) {
+	query := `SELECT id FROM user WHERE parent_id = ? AND user_type = 2 AND status = 1`
+	rows, err := config.DB.Query(query, parentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var childIDs []int64
+	for rows.Next() {
+		var childID int64
+		err := rows.Scan(&childID)
+		if err != nil {
+			return nil, err
+		}
+		childIDs = append(childIDs, childID)
+	}
+
+	return childIDs, nil
+}

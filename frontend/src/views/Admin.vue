@@ -180,8 +180,17 @@
 
         <!-- 词汇管理 -->
         <el-tab-pane label="词汇管理" name="vocabulary">
-          <div class="vocabulary-toolbar" style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
+          <div class="vocabulary-toolbar" style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
+            <div style="display: flex; gap: 10px; align-items: center;">
+              <el-input v-model="vocabularySearch" placeholder="输入单词检索" style="width: 200px;"></el-input>
+              <el-select v-model="vocabularyBookId" placeholder="选择教材" style="width: 150px;">
+                <el-option label="全部" value=""></el-option>
+                <el-option v-for="book in bookOptions" :key="book.id" :label="book.name" :value="book.id"></el-option>
+              </el-select>
+              <el-button type="primary" @click="loadVocabularies">搜索</el-button>
+            </div>
+            <div style="flex: 1;"></div>
+            <div style="display: flex; gap: 10px;">
               <el-button type="primary" @click="addVocabulary">添加词汇</el-button>
               <el-button type="success" @click="openVocabularyBatchImport">批量导入</el-button>
               <el-button type="danger" :disabled="selectedVocabularies.length === 0" @click="batchDeleteVocabularies">批量删除</el-button>
@@ -208,6 +217,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="category" label="分类" width="100" />
+            <el-table-column prop="remark" label="备注" width="150" show-overflow-tooltip />
             <el-table-column prop="create_time" label="创建时间" width="180">
               <template #default="scope">
                 {{ formatDate(scope.row.create_time) }}
@@ -629,6 +639,9 @@
         <el-form-item label="音频URL" prop="audio_url">
           <el-input v-model="vocabularyForm.audio_url" placeholder="请输入音频URL（可选）" />
         </el-form-item>
+        <el-form-item label="备注" prop="remark">
+          <el-input type="textarea" :rows="2" v-model="vocabularyForm.remark" placeholder="请输入备注（可选）" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <span class="dialog-footer">
@@ -932,7 +945,8 @@ const vocabularyForm = ref({
   book_id: '',
   category: '',
   example_sentence: '',
-  audio_url: ''
+  audio_url: '',
+  remark: ''
 })
 const vocabularyRules = {
   english: [{ required: true, message: '请输入英文', trigger: 'blur' }],
@@ -940,6 +954,10 @@ const vocabularyRules = {
   type: [{ required: true, message: '请选择类型', trigger: 'change' }],
   book_id: [{ required: true, message: '请输入或选择教材', trigger: 'change' }]
 }
+
+// 筛选相关
+const vocabularySearch = ref('')
+const vocabularyBookId = ref('')
 
 // 教材选项
 const bookOptions = ref([])
@@ -1169,11 +1187,21 @@ const saveBatchImport = async () => {
 // 加载词汇列表
 const loadVocabularies = async () => {
   try {
+    const params = {
+      page: vocabularyPage.value,
+      page_size: vocabularyPageSize.value
+    }
+    
+    // 添加筛选条件
+    if (vocabularySearch.value) {
+      params.search = vocabularySearch.value
+    }
+    if (vocabularyBookId.value) {
+      params.book_id = vocabularyBookId.value
+    }
+    
     const response = await api.get('/admin/vocabulary', {
-      params: {
-        page: vocabularyPage.value,
-        page_size: vocabularyPageSize.value
-      }
+      params
     })
     vocabularies.value = response.data.vocabularies
     vocabularyTotal.value = response.data.total
@@ -1305,7 +1333,8 @@ const editVocabulary = async (vocabulary) => {
     book_id: vocabulary.book_id || '',
     category: vocabulary.category || '',
     example_sentence: vocabulary.example_sentence || '',
-    audio_url: vocabulary.audio_url || ''
+    audio_url: vocabulary.audio_url || '',
+    remark: vocabulary.remark || ''
   }
   await loadBookOptions()
   vocabularyDialogVisible.value = true
@@ -2288,6 +2317,7 @@ onMounted(async () => {
   await loadQuotes()
   await loadVocabularies()
   await loadBooks()
+  await loadBookOptions()
 })
 
 // 重新生成例句

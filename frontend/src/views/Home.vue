@@ -1,41 +1,45 @@
 <template>
   <div class="home-container">
     <el-card class="user-info-card">
-      <div class="user-info">
-        <el-avatar :size="80" :src="user?.avatar || 'https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png'">
-          {{ user?.name?.charAt(0) || 'U' }}
-        </el-avatar>
-        <div class="user-details">
-          <h3>{{ user?.name }}</h3>
-          <p>{{ user?.user_type === 1 ? '父母账号' : '小孩账号' }}</p>
-          <div class="points-section">
-            <el-badge :value="user?.points_balance || 0" type="success" class="points-badge">
-              <el-button type="primary" size="small">我的积分</el-button>
-            </el-badge>
-            <el-button 
-              v-if="user?.user_type === 2" 
-              type="warning" 
-              size="small" 
-              @click="$router.push('/child-rewards')"
-              style="margin-left: 10px;"
-            >
-              积分商城
-            </el-button>
-            <el-button 
-              v-if="user?.user_type === 2" 
-              type="info" 
-              size="small" 
-              @click="$router.push('/vocabulary')"
-              style="margin-left: 10px;"
-            >
-              艾宾浩斯单词记忆
-            </el-button>
+      <div class="user-info-header">
+        <div class="user-info">
+          <el-avatar :size="80" :src="user?.avatar || 'https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png'">
+            {{ user?.name?.charAt(0) || 'U' }}
+          </el-avatar>
+          <div class="user-details">
+            <h3>{{ user?.name }}</h3>
+            <p>{{ user?.user_type === 1 ? '父母账号' : '小孩账号' }}</p>
+            <div class="points-section">
+              <el-badge :value="user?.points_balance || 0" type="success" class="points-badge">
+                <el-button type="primary" size="small">我的积分</el-button>
+              </el-badge>
+              <el-button 
+                v-if="user?.user_type === 2" 
+                type="warning" 
+                size="small" 
+                @click="$router.push('/child-rewards')"
+                style="margin-left: 10px;"
+              >
+                积分商城
+              </el-button>
+              <el-button 
+                v-if="user?.user_type === 2" 
+                type="info" 
+                size="small" 
+                @click="$router.push('/vocabulary')"
+                style="margin-left: 10px;"
+              >
+                艾宾浩斯单词记忆
+              </el-button>
+            </div>
           </div>
         </div>
-        <div class="user-actions">
-          <el-button v-if="user?.user_type === 1" type="success" plain @click="$router.push('/admin')">管理后台</el-button>
-          <el-button type="danger" plain @click="logout">登出</el-button>
+        <div class="logout-button">
+          <el-button type="warning" @click="logout" size="small">登出</el-button>
         </div>
+      </div>
+      <div class="user-actions">
+        <el-button v-if="user?.user_type === 1" type="success" plain @click="$router.push('/admin')">管理后台</el-button>
       </div>
     </el-card>
 
@@ -409,6 +413,16 @@ onUnmounted(() => {
 .user-info-card {
   margin-bottom: 15px;
   padding: 12px;
+  position: relative;
+}
+
+/* 用户信息头部 */
+.user-info-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  width: 100%;
+  margin-bottom: 15px;
 }
 
 /* 用户信息区域 */
@@ -417,6 +431,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 15px;
   flex-wrap: wrap;
+  flex: 1;
 }
 
 .user-avatar {
@@ -461,6 +476,12 @@ onUnmounted(() => {
   padding: 6px 16px;
 }
 
+/* 登出按钮 */
+.logout-button {
+  flex-shrink: 0;
+  margin-left: 10px;
+}
+
 .user-actions {
   display: flex;
   flex-direction: column;
@@ -475,10 +496,24 @@ onUnmounted(() => {
 
 /* 响应式设计 */
 @media (max-width: 768px) {
+  .user-info-header {
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  
+  .logout-button {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    margin-left: 0;
+  }
+  
   .user-info {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
     gap: 12px;
+    margin-top: 20px;
   }
   
   .user-avatar {

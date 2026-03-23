@@ -455,6 +455,8 @@ func CreateVocabulary(c *gin.Context) {
 func GetVocabularies(c *gin.Context) {
 	pageStr := c.DefaultQuery("page", "1")
 	pageSizeStr := c.DefaultQuery("page_size", "10")
+	search := c.Query("search")
+	bookIDStr := c.Query("book_id")
 
 	page, err := strconv.Atoi(pageStr)
 	if err != nil || page < 1 {
@@ -466,7 +468,15 @@ func GetVocabularies(c *gin.Context) {
 		pageSize = 10
 	}
 
-	vocabularies, total, err := models.GetVocabularies(page, pageSize)
+	var bookID int
+	if bookIDStr != "" {
+		bookID, err = strconv.Atoi(bookIDStr)
+		if err != nil {
+			bookID = 0
+		}
+	}
+
+	vocabularies, total, err := models.GetVocabularies(page, pageSize, search, bookID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取词汇列表失败: " + err.Error()})
 		return

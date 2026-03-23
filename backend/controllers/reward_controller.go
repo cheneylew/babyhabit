@@ -53,7 +53,21 @@ func GetRewardItems(c *gin.Context) {
 	statusStr := c.DefaultQuery("status", "1")
 	status, _ := strconv.Atoi(statusStr)
 
-	items, err := models.GetRewardItems(status)
+	// 获取当前用户信息
+	user, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+	currentUser := user.(*models.User)
+	userID := currentUser.ID
+
+	// 如果是小孩用户，使用父母ID查询奖励
+	if currentUser.UserType == 2 && currentUser.ParentID > 0 {
+		userID = currentUser.ParentID
+	}
+
+	items, err := models.GetRewardItemsByCreatorID(userID, status)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -204,7 +218,25 @@ func GetExchangeRecords(c *gin.Context) {
 
 // GetAllExchangeRecords 获取所有兑换记录（管理员）
 func GetAllExchangeRecords(c *gin.Context) {
-	records, err := models.GetAllExchangeRecords()
+	// 获取当前用户信息
+	user, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
+		return
+	}
+	userID := user.(*models.User).ID
+
+	// 获取用户的孩子ID列表
+	childIDs, err := models.GetChildIDsByParentID(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 构建用户ID列表（包括自己和孩子）
+	userIDs := append([]int64{userID}, childIDs...)
+
+	records, err := models.GetExchangeRecordsByUserIDs(userIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

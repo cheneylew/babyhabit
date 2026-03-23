@@ -687,7 +687,7 @@ func CreateVocabulary(vocab *Vocabulary) error {
 func GetLearningHistory(userID int64) ([]*Vocabulary, error) {
 	query := `
 		SELECT v.id, v.english, v.chinese, v.phonetic, v.audio_url, v.example_sentence, 
-		   v.type, v.book_id, v.category, v.remark, v.create_time
+		   v.type, v.book_id, v.category, v.remark, lr.create_time
 		FROM ab_vocabulary v
 		JOIN ab_learning_record lr ON v.id = lr.vocabulary_id
 		WHERE lr.user_id = ?
@@ -727,26 +727,52 @@ func GetLearningHistory(userID int64) ([]*Vocabulary, error) {
 }
 
 // GetVocabularies 获取词汇列表（带分页）
-func GetVocabularies(page, pageSize int) ([]*Vocabulary, int, error) {
+func GetVocabularies(page, pageSize int, search string, bookID int) ([]*Vocabulary, int, error) {
 	var vocabularies []*Vocabulary
 	var total int
 
+	// 构建查询条件
+	whereClause := ""
+	args := []interface{}{}
+
+	if search != "" {
+		whereClause += " WHERE english LIKE ? OR chinese LIKE ?"
+		searchPattern := "%" + search + "%"
+		args = append(args, searchPattern, searchPattern)
+	}
+
+	if bookID > 0 {
+		if whereClause == "" {
+			whereClause += " WHERE"
+		} else {
+			whereClause += " AND"
+		}
+		whereClause += " book_id = ?"
+		args = append(args, bookID)
+	}
+
 	// 获取总数
-	countQuery := "SELECT COUNT(*) FROM ab_vocabulary"
-	err := config.DB.QueryRow(countQuery).Scan(&total)
-	if err != nil {
-		return nil, 0, err
+	countQuery := "SELECT COUNT(*) FROM ab_vocabulary" + whereClause
+	var countErr error
+	if len(args) > 0 {
+		countErr = config.DB.QueryRow(countQuery, args...).Scan(&total)
+	} else {
+		countErr = config.DB.QueryRow(countQuery).Scan(&total)
+	}
+	if countErr != nil {
+		return nil, 0, countErr
 	}
 
 	// 获取分页数据
 	offset := (page - 1) * pageSize
 	query := `
 		SELECT id, english, chinese, phonetic, audio_url, example_sentence, type, book_id, category, remark, create_time
-		FROM ab_vocabulary
+		FROM ab_vocabulary` + whereClause + `
 		ORDER BY id DESC
 		LIMIT ? OFFSET ?
 	`
-	rows, err := config.DB.Query(query, pageSize, offset)
+	args = append(args, pageSize, offset)
+	rows, err := config.DB.Query(query, args...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -780,13 +806,13 @@ func UpdateVocabulary(vocab *Vocabulary) error {
 	query := `
 		UPDATE ab_vocabulary
 		SET english = ?, chinese = ?, phonetic = ?, audio_url = ?, example_sentence = ?, 
-			type = ?, book_id = ?, category = ?
+			type = ?, book_id = ?, category = ?, remark = ?
 		WHERE id = ?
 	`
 	_, err := config.DB.Exec(
 		query,
 		vocab.English, vocab.Chinese, vocab.Phonetic, vocab.AudioURL,
-		vocab.ExampleSentence, vocab.Type, vocab.BookID, vocab.Category, vocab.ID,
+		vocab.ExampleSentence, vocab.Type, vocab.BookID, vocab.Category, vocab.Remark, vocab.ID,
 	)
 	return err
 }

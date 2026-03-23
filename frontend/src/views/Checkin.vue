@@ -1,26 +1,5 @@
 <template>
   <div class="checkin-container">
-    <!-- 名言警句悬浮显示 -->
-    <div v-if="randomQuote" class="quote-float">
-      <div class="quote-content">
-        <button class="quote-close" @click="closeQuote">×</button>
-        <div class="quote-text-container">
-          <span class="quote-text">
-            "{{ randomQuote.content }}"
-            <span v-if="randomQuote.meaning" class="meaning-toggle" @click="toggleMeaning(randomQuote.id)">
-              <span class="meaning-icon">{{ showMeaning[randomQuote.id] ? '✕' : '!' }}</span>
-            </span>
-          </span>
-          <span v-if="randomQuote.meaning && showMeaning[randomQuote.id]" class="quote-meaning">{{ randomQuote.meaning }}</span>
-          <span v-if="randomQuote.author" class="quote-author">—— {{ randomQuote.author }}</span>
-        </div>
-        <div class="quote-buttons">
-          <button class="quote-prev" @click="loadPreviousQuote" :disabled="currentQuoteIndex <= 0">上一句</button>
-          <button class="quote-next" @click="loadRandomQuote">下一句</button>
-        </div>
-      </div>
-    </div>
-    
     <el-card class="checkin-card">
       <template #header>
         <div class="card-header">
@@ -33,6 +12,27 @@
           <el-date-picker v-model="selectedDate" type="date" placeholder="选择日期" @change="onDateChange" />
         </div>
       </template>
+      
+      <!-- 名言警句嵌入显示 -->
+      <div v-if="randomQuote" class="quote-embed">
+        <div class="quote-content">
+          <button class="quote-close" @click="closeQuote">×</button>
+          <div class="quote-text-container">
+            <span class="quote-text">
+              "{{ randomQuote.content }}"
+              <span v-if="randomQuote.meaning" class="meaning-toggle" @click="toggleMeaning(randomQuote.id)">
+                <span class="meaning-icon">{{ showMeaning[randomQuote.id] ? '✕' : '!' }}</span>
+              </span>
+            </span>
+            <span v-if="randomQuote.meaning && showMeaning[randomQuote.id]" class="quote-meaning">{{ randomQuote.meaning }}</span>
+            <span v-if="randomQuote.author" class="quote-author">—— {{ randomQuote.author }}</span>
+          </div>
+          <div class="quote-buttons">
+            <button class="quote-prev" @click="loadPreviousQuote" :disabled="currentQuoteIndex <= 0">上一句</button>
+            <button class="quote-next" @click="loadRandomQuote">下一句</button>
+          </div>
+        </div>
+      </div>
       
       <div v-if="availableHabits.length > 0" class="habits-list">
         <el-card v-for="habit in availableHabits" :key="habit.id" class="habit-item">
@@ -681,17 +681,10 @@ onMounted(async () => {
   position: relative;
 }
 
-/* 名言警句悬浮样式 */
-.quote-float {
-  position: fixed;
-  top: 20px;
-  left: 0;
-  right: 0;
-  z-index: 9999;
-  max-width: 100%;
+/* 名言警句嵌入样式 */
+.quote-embed {
   width: 100%;
-  padding: 0 10px;
-  box-sizing: border-box;
+  margin-bottom: 20px;
 }
 
 .quote-content {
