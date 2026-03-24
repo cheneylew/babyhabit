@@ -85,6 +85,37 @@ func generateSignature(secretKey, data string, timestamp int64) string {
 
 // GenerateSpeech 生成语音文件
 func GenerateSpeech(word string) (string, error) {
+	// 生成单词的MD5哈希值
+	md5Hash := md5.Sum([]byte(word))
+	md5String := hex.EncodeToString(md5Hash[:])
+
+	// 判断是否只包含字母和数字（纯单词）
+	isPureWord := true
+	for _, r := range word {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+			isPureWord = false
+			break
+		}
+	}
+
+	// 根据是否为纯单词生成不同的文件名
+	var fileName string
+	if isPureWord {
+		// 纯单词，使用单词+MD5
+		fileName = fmt.Sprintf("%s_%s.mp3", word, md5String)
+	} else {
+		// 非纯单词（如短语），使用MD5作为文件名
+		fileName = fmt.Sprintf("phrase_%s.mp3", md5String)
+	}
+
+	// 检查本地文件是否存在
+	wordsDir := filepath.Join("files", "words")
+	filePath := filepath.Join(wordsDir, fileName)
+	if _, err := os.Stat(filePath); err == nil {
+		// 文件存在，直接返回文件路径
+		return "/files/words/" + fileName, nil
+	}
+
 	// 从环境变量获取配置
 	appID := os.Getenv("VOICE_APPID")
 	accessToken := os.Getenv("VOICE_ACCESS_TOKEN")
@@ -207,34 +238,9 @@ func GenerateSpeech(word string) (string, error) {
 	}
 
 	// 确保目录存在
-	wordsDir := filepath.Join("files", "words")
 	if err := os.MkdirAll(wordsDir, 0755); err != nil {
 		return "", err
 	}
-
-	// 生成单词的MD5哈希值
-	md5Hash := md5.Sum([]byte(word))
-	md5String := hex.EncodeToString(md5Hash[:])
-
-	// 判断是否只包含字母和数字（纯单词）
-	isPureWord := true
-	for _, r := range word {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
-			isPureWord = false
-			break
-		}
-	}
-
-	// 根据是否为纯单词生成不同的文件名
-	var fileName string
-	if isPureWord {
-		// 纯单词，使用单词+MD5
-		fileName = fmt.Sprintf("%s_%s.mp3", word, md5String)
-	} else {
-		// 包含特殊字符或空格，直接用MD5作为文件名
-		fileName = fmt.Sprintf("%s.mp3", md5String)
-	}
-	filePath := filepath.Join(wordsDir, fileName)
 
 	// 写入文件
 	if err := os.WriteFile(filePath, audioData, 0644); err != nil {

@@ -3,6 +3,7 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -955,80 +956,105 @@ func RegenerateVocabularies(c *gin.Context) {
 		return
 	}
 
-	// 设置响应头为JSON流
-	c.Header("Content-Type", "application/json")
-	c.Header("Transfer-Encoding", "chunked")
-
 	// 开始逐个处理词汇
 	successCount := 0
 	totalCount := len(request.IDs)
 
-	for i, id := range request.IDs {
-		// 获取词汇信息
-		vocab, err := models.GetVocabularyByID(id)
-		if err != nil {
-			// 发送错误信息
-			fmt.Fprintf(c.Writer, `{"status":"progress","current":%d,"total":%d,"word":"%s","error":"%s"}\n`, i+1, totalCount, "", err.Error())
-			c.Writer.Flush()
-			continue
-		}
+	// 使用c.Stream发送流式响应
+	c.Stream(func(w io.Writer) bool {
+		for i, id := range request.IDs {
+			// 获取词汇信息
+			vocab, err := models.GetVocabularyByID(id)
+			if err != nil {
+				// 发送错误信息
+				progressData := map[string]interface{}{
+					"status":  "progress",
+					"current": i + 1,
+					"total":   totalCount,
+					"word":    "",
+					"error":   err.Error(),
+				}
+				if data, err := json.Marshal(progressData); err == nil {
+					fmt.Fprintf(w, "%s\n", data)
+					w.(http.Flusher).Flush()
+				}
+				continue
+			}
 
-		// 生成完整的单词信息（重试机制）
-		var wordInfo *utils.WordInfo
-		var infoErr error
-		maxRetries := 3
-		for retry := 0; retry < maxRetries; retry++ {
-			wordInfo, infoErr = utils.GenerateWordInfo(vocab.English)
+			// 生成完整的单词信息（重试机制）
+			var wordInfo *utils.WordInfo
+			var infoErr error
+			maxRetries := 3
+			for retry := 0; retry < maxRetries; retry++ {
+				wordInfo, infoErr = utils.GenerateWordInfo(vocab.English)
+				if infoErr == nil && wordInfo != nil {
+					break
+				}
+				// 重试间隔
+				time.Sleep(time.Second * time.Duration(retry+1))
+			}
+
+			// 处理单词信息
 			if infoErr == nil && wordInfo != nil {
-				break
+				// 设置中文翻译
+				vocab.Chinese = wordInfo.Chinese
+
+				// 设置音标（将PhoneticInfo转换为JSON字符串）
+				phoneticJSON, err := json.Marshal(wordInfo.Phonetic)
+				if err == nil {
+					phoneticStr := string(phoneticJSON)
+					vocab.Phonetic = &phoneticStr
+				}
+
+				// 设置例句（将[]Example转换为JSON字符串）
+				examplesJSON, err := json.Marshal(wordInfo.Examples)
+				if err == nil {
+					examplesStr := string(examplesJSON)
+					vocab.ExampleSentence = &examplesStr
+				}
+
+				// 设置分类
+				category := wordInfo.Category
+				vocab.Category = &category
+
+				// 设置音频URL
+				if wordInfo.AudioURL != "" {
+					vocab.AudioURL = &wordInfo.AudioURL
+				}
+
+				// 更新词汇
+				err = models.UpdateVocabulary(vocab)
+				if err == nil {
+					successCount++
+				}
 			}
-			// 重试间隔
-			time.Sleep(time.Second * time.Duration(retry+1))
+
+			// 发送进度信息
+			progressData := map[string]interface{}{
+				"status":  "progress",
+				"current": i + 1,
+				"total":   totalCount,
+				"word":    vocab.English,
+			}
+			if data, err := json.Marshal(progressData); err == nil {
+				fmt.Fprintf(w, "%s\n", data)
+				w.(http.Flusher).Flush()
+			}
 		}
 
-		// 处理单词信息
-		if infoErr == nil && wordInfo != nil {
-			// 设置中文翻译
-			vocab.Chinese = wordInfo.Chinese
-
-			// 设置音标（将PhoneticInfo转换为JSON字符串）
-			phoneticJSON, err := json.Marshal(wordInfo.Phonetic)
-			if err == nil {
-				phoneticStr := string(phoneticJSON)
-				vocab.Phonetic = &phoneticStr
-			}
-
-			// 设置例句（将[]Example转换为JSON字符串）
-			examplesJSON, err := json.Marshal(wordInfo.Examples)
-			if err == nil {
-				examplesStr := string(examplesJSON)
-				vocab.ExampleSentence = &examplesStr
-			}
-
-			// 设置分类
-			category := wordInfo.Category
-			vocab.Category = &category
-
-			// 设置音频URL
-			if wordInfo.AudioURL != "" {
-				vocab.AudioURL = &wordInfo.AudioURL
-			}
-
-			// 更新词汇
-			err = models.UpdateVocabulary(vocab)
-			if err == nil {
-				successCount++
-			}
+		// 发送完成信息
+		completedData := map[string]interface{}{
+			"status":  "completed",
+			"success": successCount,
+			"total":   totalCount,
+		}
+		if data, err := json.Marshal(completedData); err == nil {
+			fmt.Fprintf(w, "%s\n", data)
+			w.(http.Flusher).Flush()
 		}
 
-		// 发送进度信息
-		fmt.Fprintf(c.Writer, `{"status":"progress","current":%d,"total":%d,"word":"%s"}\n`, i+1, totalCount, vocab.English)
-		c.Writer.Flush()
-	}
-
-	// 发送完成信息
-	fmt.Fprintf(c.Writer, `{"status":"completed","success":%d,"total":%d}\n`, successCount, totalCount)
-	c.Writer.Flush()
+		return false
+	})
 }
 
 // Chat 聊天接口

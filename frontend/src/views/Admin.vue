@@ -697,7 +697,7 @@
     <!-- 词汇检测对话框 -->
     <el-dialog v-model="vocabularyDetectDialogVisible" title="词汇检测" width="800px">
       <div v-if="!vocabularyDetectLoading && incompleteVocabularies.length > 0">
-        <p class="detect-hint">检测到以下词汇缺少AI生成的信息（中文、音标、例句或发音）：</p>
+        <p class="detect-hint">检测到以下词汇缺少AI生成的信息（中文、音标、例句或发音），总计 {{ incompleteVocabularies.length }} 条：</p>
         <el-table :data="incompleteVocabularies" style="width: 100%" class="detect-table">
           <el-table-column prop="id" label="ID" width="80" />
           <el-table-column prop="english" label="英文" width="200" />
@@ -707,10 +707,10 @@
           <el-table-column label="状态" width="150">
             <template #default="scope">
               <div>
-                <span v-if="!scope.row.chinese" class="status-missing">缺少中文</span>
-                <span v-if="!scope.row.phonetic" class="status-missing">缺少音标</span>
-                <span v-if="!scope.row.example_sentence" class="status-missing">缺少例句</span>
-                <span v-if="!scope.row.audio_url" class="status-missing">缺少发音</span>
+                <span v-if="!scope.row.chinese || scope.row.chinese === 'null'" class="status-missing">缺少中文</span>
+                <span v-if="!scope.row.phonetic || scope.row.phonetic === 'null'" class="status-missing">缺少音标</span>
+                <span v-if="!scope.row.example_sentence || scope.row.example_sentence === 'null' || scope.row.example_sentence === '[]'" class="status-missing">缺少例句</span>
+                <span v-if="!scope.row.audio_url || scope.row.audio_url === 'null'" class="status-missing">缺少发音</span>
               </div>
             </template>
           </el-table-column>

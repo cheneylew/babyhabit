@@ -868,7 +868,7 @@ func GetIncompleteVocabularies() ([]*Vocabulary, error) {
 	query := `
 		SELECT id, english, chinese, phonetic, audio_url, example_sentence, type, book_id, category, remark, create_time
 		FROM ab_vocabulary
-		WHERE chinese IS NULL OR phonetic IS NULL OR example_sentence IS NULL OR audio_url IS NULL
+		WHERE chinese IS NULL OR chinese = '' OR chinese = 'null' OR phonetic IS NULL OR phonetic = '' OR phonetic = 'null' OR example_sentence IS NULL or example_sentence = '' or example_sentence = 'null' OR audio_url IS NULL or audio_url = ''
 		ORDER BY id DESC
 	`
 
