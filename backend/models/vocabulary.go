@@ -377,7 +377,9 @@ func UpdateLearningRecord(recordID int, isCorrect bool) error {
 			)
 		} else {
 			// 计算下次复习时间
-			intervals := []int{1, 1, 3, 7, 15, 30}
+			// 老版本： 1, 1, 3, 7, 15, 30 艾宾浩斯
+			// 新版本:  1, 3, 7, 14, 30, 60 经典SuperMemo算法
+			intervals := []int{1, 3, 7, 15, 30, 60}
 			interval := intervals[record.ReviewStage-1]
 			nextReviewDate := time.Now().AddDate(0, 0, interval)
 
