@@ -1087,6 +1087,12 @@ const dictationFailed = async () => {
   // 显示下一个按钮
   dictationShowFeedback.value = true
   
+  // 播放当前单词发音两次
+  playDictationAudio()
+  setTimeout(() => {
+    playDictationAudio()
+  }, 1500)
+  
   // 记录默写失败的单词到艾宾浩斯不会的单词逻辑
   try {
     const requestData = {
