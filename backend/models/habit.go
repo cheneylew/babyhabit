@@ -1,10 +1,11 @@
 package models
 
 import (
-	"babyhabit/config"
 	"database/sql"
 	"errors"
 	"time"
+
+	"github.com/cheneylew/babyhabit/backend/config"
 )
 
 type Habit struct {

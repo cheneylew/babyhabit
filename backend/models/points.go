@@ -1,8 +1,9 @@
 package models
 
 import (
-	"babyhabit/config"
 	"time"
+
+	"github.com/cheneylew/babyhabit/backend/config"
 )
 
 type PointsRecord struct {

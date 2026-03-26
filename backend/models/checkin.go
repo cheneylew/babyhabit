@@ -1,10 +1,11 @@
 package models
 
 import (
-	"babyhabit/config"
 	"database/sql"
 	"errors"
 	"time"
+
+	"github.com/cheneylew/babyhabit/backend/config"
 )
 
 type CheckinRecord struct {
@@ -352,13 +353,13 @@ func GetDailyPointsStats(userID int64, startDate, endDate string) ([]map[string]
 			 WHERE user_id = ? AND checkin_date BETWEEN ? AND ? AND is_rolled_back = 0 
 			 GROUP BY DATE(checkin_date) 
 			 ORDER BY checkin_date ASC`
-	
+
 	rows, err := config.DB.Query(query, userID, startDate, endDate)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	stats := []map[string]interface{}{}
 	for rows.Next() {
 		var date string
@@ -366,12 +367,12 @@ func GetDailyPointsStats(userID int64, startDate, endDate string) ([]map[string]
 		if err := rows.Scan(&date, &points); err != nil {
 			return nil, err
 		}
-		
+
 		stats = append(stats, map[string]interface{}{
 			"date":   date,
 			"points": points,
 		})
 	}
-	
+
 	return stats, nil
 }

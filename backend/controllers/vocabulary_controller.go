@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"babyhabit/models"
-	"babyhabit/utils"
+	"github.com/cheneylew/babyhabit/backend/models"
+	"github.com/cheneylew/babyhabit/backend/utils"
 
 	"github.com/gin-gonic/gin"
 )

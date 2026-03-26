@@ -1,12 +1,13 @@
 package middleware
 
 import (
-	"babyhabit/config"
-	"babyhabit/models"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/cheneylew/babyhabit/backend/config"
+	"github.com/cheneylew/babyhabit/backend/models"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"

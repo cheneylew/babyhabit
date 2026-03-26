@@ -4,17 +4,17 @@ import (
 	"database/sql"
 	"time"
 
-	"babyhabit/config"
+	"github.com/cheneylew/babyhabit/backend/config"
 )
 
 // UserPreference 用户偏好设置模型
 type UserPreference struct {
-	ID             int       `json:"id"`
-	UserID         int64     `json:"user_id"`
-	PreferenceKey  string    `json:"preference_key"`
+	ID              int       `json:"id"`
+	UserID          int64     `json:"user_id"`
+	PreferenceKey   string    `json:"preference_key"`
 	PreferenceValue string    `json:"preference_value"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // GetUserPreference 获取用户特定偏好设置
@@ -22,7 +22,7 @@ func GetUserPreference(userID int64, key string) (*UserPreference, error) {
 	query := `SELECT id, user_id, preference_key, preference_value, created_at, updated_at FROM user_preference WHERE user_id = ? AND preference_key = ?`
 	var preference UserPreference
 	err := config.DB.QueryRow(query, userID, key).Scan(
-		&preference.ID, &preference.UserID, &preference.PreferenceKey, 
+		&preference.ID, &preference.UserID, &preference.PreferenceKey,
 		&preference.PreferenceValue, &preference.CreatedAt, &preference.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -47,7 +47,7 @@ func GetUserPreferences(userID int64) ([]*UserPreference, error) {
 	for rows.Next() {
 		var preference UserPreference
 		err := rows.Scan(
-			&preference.ID, &preference.UserID, &preference.PreferenceKey, 
+			&preference.ID, &preference.UserID, &preference.PreferenceKey,
 			&preference.PreferenceValue, &preference.CreatedAt, &preference.UpdatedAt,
 		)
 		if err != nil {

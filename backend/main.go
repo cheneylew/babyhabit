@@ -1,12 +1,13 @@
 package main
 
 import (
-	"babyhabit/api"
-	"babyhabit/config"
-	"babyhabit/utils"
 	"fmt"
 	"log"
 	"os"
+
+	"github.com/cheneylew/babyhabit/backend/api"
+	"github.com/cheneylew/babyhabit/backend/config"
+	"github.com/cheneylew/babyhabit/backend/utils"
 
 	"github.com/gin-gonic/gin"
 )

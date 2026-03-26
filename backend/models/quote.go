@@ -1,9 +1,10 @@
 package models
 
 import (
-	"babyhabit/config"
 	"database/sql"
 	"time"
+
+	"github.com/cheneylew/babyhabit/backend/config"
 )
 
 // Quote 名言警句结构体

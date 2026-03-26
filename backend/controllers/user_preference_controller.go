@@ -6,7 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"babyhabit/models"
+	"github.com/cheneylew/babyhabit/backend/models"
 )
 
 // GetUserPreference 获取用户特定偏好设置

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"babyhabit/config"
+	"github.com/cheneylew/babyhabit/backend/config"
 )
 
 // Vocabulary 词汇模型

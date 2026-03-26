@@ -1,9 +1,10 @@
 package api
 
 import (
-	"babyhabit/controllers"
-	"babyhabit/middleware"
 	"net/http"
+
+	"github.com/cheneylew/babyhabit/backend/controllers"
+	"github.com/cheneylew/babyhabit/backend/middleware"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"

@@ -1,10 +1,11 @@
 package controllers
 
 import (
-	"babyhabit/models"
 	"database/sql"
 	"net/http"
 	"strconv"
+
+	"github.com/cheneylew/babyhabit/backend/models"
 
 	"github.com/gin-gonic/gin"
 )

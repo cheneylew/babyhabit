@@ -35,3 +35,6 @@ build
 frontend/dist
 backend/files
 babyhabit
+backend/babyhabit_backend
+backend/cmdWords
+pkg

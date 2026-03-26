@@ -1,11 +1,12 @@
 package models
 
 import (
-	"babyhabit/config"
 	"database/sql"
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/cheneylew/babyhabit/backend/config"
 )
 
 type RewardItem struct {
