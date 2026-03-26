@@ -727,45 +727,57 @@ func BatchCreateVocabulary(c *gin.Context) {
 			currentVocab.Remark = &request.Remark
 		}
 
-		// 生成完整的单词信息（重试机制）
+		// 检查其他教材是否已经有同样的英文单词
+		existingVocab, err := models.GetVocabularyByEnglish(currentVocab.English)
 		var wordInfo *utils.WordInfo
-		var infoErr error
-		maxRetries := 3
-		for retry := 0; retry < maxRetries; retry++ {
-			wordInfo, infoErr = utils.GenerateWordInfo(currentVocab.English)
+		if err == nil && existingVocab != nil {
+			// 其他教材已经有同样的英文单词，直接复制整行过来
+			currentVocab.Chinese = existingVocab.Chinese
+			currentVocab.Phonetic = existingVocab.Phonetic
+			currentVocab.AudioURL = existingVocab.AudioURL
+			currentVocab.ExampleSentence = existingVocab.ExampleSentence
+			currentVocab.Type = existingVocab.Type
+			currentVocab.Category = existingVocab.Category
+		} else {
+			// 生成完整的单词信息（重试机制）
+			var infoErr error
+			maxRetries := 3
+			for retry := 0; retry < maxRetries; retry++ {
+				wordInfo, infoErr = utils.GenerateWordInfo(currentVocab.English)
+				if infoErr == nil && wordInfo != nil {
+					break
+				}
+				// 重试间隔
+				time.Sleep(time.Second * time.Duration(retry+1))
+			}
+
+			// 处理单词信息
 			if infoErr == nil && wordInfo != nil {
-				break
-			}
-			// 重试间隔
-			time.Sleep(time.Second * time.Duration(retry+1))
-		}
+				// 设置中文翻译
+				currentVocab.Chinese = wordInfo.Chinese
 
-		// 处理单词信息
-		if infoErr == nil && wordInfo != nil {
-			// 设置中文翻译
-			currentVocab.Chinese = wordInfo.Chinese
+				// 设置音标（将PhoneticInfo转换为JSON字符串）
+				phoneticJSON, err := json.Marshal(wordInfo.Phonetic)
+				if err == nil {
+					phoneticStr := string(phoneticJSON)
+					currentVocab.Phonetic = &phoneticStr
+				}
 
-			// 设置音标（将PhoneticInfo转换为JSON字符串）
-			phoneticJSON, err := json.Marshal(wordInfo.Phonetic)
-			if err == nil {
-				phoneticStr := string(phoneticJSON)
-				currentVocab.Phonetic = &phoneticStr
-			}
+				// 设置例句（将[]Example转换为JSON字符串）
+				examplesJSON, err := json.Marshal(wordInfo.Examples)
+				if err == nil {
+					examplesStr := string(examplesJSON)
+					currentVocab.ExampleSentence = &examplesStr
+				}
 
-			// 设置例句（将[]Example转换为JSON字符串）
-			examplesJSON, err := json.Marshal(wordInfo.Examples)
-			if err == nil {
-				examplesStr := string(examplesJSON)
-				currentVocab.ExampleSentence = &examplesStr
-			}
+				// 设置分类
+				category := wordInfo.Category
+				currentVocab.Category = &category
 
-			// 设置分类
-			category := wordInfo.Category
-			currentVocab.Category = &category
-
-			// 设置音频URL
-			if wordInfo.AudioURL != "" {
-				currentVocab.AudioURL = &wordInfo.AudioURL
+				// 设置音频URL
+				if wordInfo.AudioURL != "" {
+					currentVocab.AudioURL = &wordInfo.AudioURL
+				}
 			}
 		}
 

@@ -609,7 +609,26 @@
     <el-dialog v-model="vocabularyDialogVisible" :title="editingVocabulary ? '编辑词汇' : '添加词汇'" width="600px">
       <el-form :model="vocabularyForm" :rules="vocabularyRules" ref="vocabularyFormRef" label-width="80px">
         <el-form-item label="英文" prop="english">
-          <el-input v-model="vocabularyForm.english" placeholder="请输入英文单词或句子" />
+          <div class="suggestion-container">
+            <el-input 
+              v-model="vocabularyForm.english" 
+              placeholder="请输入英文单词或句子" 
+              @input="handleEnglishInput"
+              @blur="handleEnglishBlur"
+              @focus="handleEnglishFocus"
+            />
+            <div v-if="vocabularySuggestionsVisible && vocabularySuggestions.length > 0" class="suggestion-list">
+              <div 
+                v-for="suggestion in vocabularySuggestions" 
+                :key="suggestion.id" 
+                class="suggestion-item"
+                @mousedown="selectSuggestion(suggestion)"
+              >
+                <div class="suggestion-english">{{ suggestion.english }}</div>
+                <div class="suggestion-chinese">{{ suggestion.chinese }}</div>
+              </div>
+            </div>
+          </div>
         </el-form-item>
         <el-form-item label="中文" prop="chinese">
           <el-input v-model="vocabularyForm.chinese" placeholder="请输入中文翻译" />
@@ -952,6 +971,10 @@ const vocabularyForm = ref({
   audio_url: '',
   remark: ''
 })
+
+// 词汇搜索建议
+const vocabularySuggestions = ref([])
+const vocabularySuggestionsVisible = ref(false)
 const vocabularyRules = {
   english: [{ required: true, message: '请输入英文', trigger: 'blur' }],
   chinese: [{ required: false, message: '请输入中文', trigger: 'blur' }],
@@ -1322,8 +1345,72 @@ const addVocabulary = async () => {
     example_sentence: '',
     audio_url: ''
   }
+  // 重置搜索建议
+  vocabularySuggestions.value = []
+  vocabularySuggestionsVisible.value = false
   await loadBookOptions()
   vocabularyDialogVisible.value = true
+}
+
+// 处理英文输入
+const handleEnglishInput = async (value) => {
+  if (value.length < 2) {
+    vocabularySuggestions.value = []
+    vocabularySuggestionsVisible.value = false
+    return
+  }
+
+  try {
+    const response = await api.get('/admin/vocabulary', {
+      params: {
+        search: value,
+        page: 1,
+        page_size: 10
+      }
+    })
+    if (response.data && response.data.vocabularies) {
+      vocabularySuggestions.value = response.data.vocabularies
+      vocabularySuggestionsVisible.value = vocabularySuggestions.value.length > 0
+    } else {
+      vocabularySuggestions.value = []
+      vocabularySuggestionsVisible.value = false
+    }
+  } catch (error) {
+    console.error('搜索词汇失败:', error)
+    vocabularySuggestions.value = []
+    vocabularySuggestionsVisible.value = false
+  }
+}
+
+// 处理英文输入框失去焦点
+const handleEnglishBlur = () => {
+  // 延迟隐藏，以便点击建议项时能够触发
+  setTimeout(() => {
+    vocabularySuggestionsVisible.value = false
+  }, 200)
+}
+
+// 处理英文输入框获得焦点
+const handleEnglishFocus = async () => {
+  if (vocabularyForm.value.english.length >= 2) {
+    await handleEnglishInput(vocabularyForm.value.english)
+  }
+}
+
+// 选择搜索建议
+const selectSuggestion = (suggestion) => {
+  // 填充表单字段
+  vocabularyForm.value.english = suggestion.english
+  vocabularyForm.value.chinese = suggestion.chinese || ''
+  vocabularyForm.value.phonetic = suggestion.phonetic || ''
+  vocabularyForm.value.type = suggestion.type || 'word'
+  vocabularyForm.value.category = suggestion.category || ''
+  vocabularyForm.value.example_sentence = suggestion.example_sentence || ''
+  vocabularyForm.value.audio_url = suggestion.audio_url || ''
+  vocabularyForm.value.remark = suggestion.remark || ''
+  
+  // 隐藏搜索建议
+  vocabularySuggestionsVisible.value = false
 }
 
 // 编辑词汇
@@ -2541,6 +2628,45 @@ const cancelRegenerateExample = () => {
   display: flex;
   gap: 10px;
   margin-bottom: 10px;
+}
+
+.suggestion-container {
+  position: relative;
+  width: 100%;
+}
+
+.suggestion-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.suggestion-item {
+  padding: 10px 15px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.suggestion-item:hover {
+  background-color: #f5f7fa;
+}
+
+.suggestion-english {
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.suggestion-chinese {
+  font-size: 12px;
+  color: #909399;
 }
 
 .pagination {

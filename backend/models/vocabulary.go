@@ -77,6 +77,30 @@ func GetVocabularyByID(id int) (*Vocabulary, error) {
 	return &vocab, nil
 }
 
+// GetVocabularyByEnglish 根据英文单词获取词汇（不限制教材）
+func GetVocabularyByEnglish(english string) (*Vocabulary, error) {
+	var vocab Vocabulary
+	var phonetic, audioURL, exampleSentence, category, remark *string
+	var bookID *int
+	query := `SELECT id, english, chinese, phonetic, audio_url, example_sentence, type, book_id, category, remark, create_time 
+			FROM ab_vocabulary WHERE english = ? LIMIT 1`
+	err := config.DB.QueryRow(query, english).Scan(
+		&vocab.ID, &vocab.English, &vocab.Chinese, &phonetic,
+		&audioURL, &exampleSentence, &vocab.Type,
+		&bookID, &category, &remark, &vocab.CreateTime,
+	)
+	if err != nil {
+		return nil, err
+	}
+	vocab.Phonetic = phonetic
+	vocab.AudioURL = audioURL
+	vocab.ExampleSentence = exampleSentence
+	vocab.BookID = bookID
+	vocab.Category = category
+	vocab.Remark = remark
+	return &vocab, nil
+}
+
 // GetNewVocabularies 获取新词汇（用户未学习过的）
 func GetNewVocabularies(userID int64, limit int, bookIDs []int) ([]*Vocabulary, error) {
 	// 如果没有选中教材，返回空
