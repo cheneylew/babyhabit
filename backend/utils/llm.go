@@ -508,11 +508,11 @@ func GenerateWordInfo(word string) (*WordInfo, error) {
 	}
 
 	// 准备请求数据
-	prompt := fmt.Sprintf(`请为单词 '%s' 提供以下信息，以JSON格式返回：
-1. chinese: 详细的中文翻译
-2. phonetic: 包含英式和美式音标的对象，格式为 {"uk": "英式音标", "us": "美式音标"}
+	prompt := fmt.Sprintf(`请为单词或句子 '%s' 提供以下信息，以JSON格式返回：
+1. chinese: 详细的中文翻译，如果是句子提供整句的地道翻译。
+2. phonetic: 包含英式和美式音标的对象，格式为 {"uk": "英式音标", "us": "美式音标"}。句子不需要音标
 3. examples: 至少3个例句对象的数组，每个对象包含英文和中文，格式为 [{"english": "英文例句", "chinese": "中文翻译"}, ...]
-4. category: 单词分类（如：名词、动词、形容词等）
+4. category: 单词分类（如：名词、动词、形容词等），句子的分类为句子。
 
 请只返回JSON数据，不要包含任何其他解释或文本。`, word)
 	reqData := TextGenerationRequest{

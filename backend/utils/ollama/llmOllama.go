@@ -55,6 +55,7 @@ type WordInfo struct {
 type PhoneticInfo struct {
 	UK string `json:"uk"`
 	US string `json:"us"`
+	CN string `json:"cn"`
 }
 
 // Example 例句结构
@@ -109,9 +110,9 @@ func (c *OllamaClient) Chat(prompt string) (string, error) {
 // GenerateWordInfo 使用 Ollama 生成单词信息
 func (c *OllamaClient) GenerateWordInfo(word string) (*WordInfo, error) {
 	// 构建提示词
-	prompt := fmt.Sprintf(`请为单词 "%s" 生成以下信息：
-1. 中文意思
-2. 英音和美音音标
+	prompt := fmt.Sprintf(`请为单词或句子 "%s" 生成以下信息：
+1. 中文意思，如果是句子提供整句的地道翻译。中文成语提供详细的典故，里面不要再出现该词语。
+2. 英音和美音音标。句子不需要音标。中文只返回cn的拼音，不需要返回英语音标
 3. 3个例句（每个例句包含英文和中文翻译）
 4. 单词类别（如：名词、动词、形容词等）
 
@@ -120,7 +121,8 @@ func (c *OllamaClient) GenerateWordInfo(word string) (*WordInfo, error) {
   "chinese": "中文意思",
   "phonetic": {
     "uk": "英音音标",
-    "us": "美音音标"
+    "us": "美音音标",
+	"cn": "中文拼音"
   },
   "examples": [
     {"english": "例句1", "chinese": "翻译1"},
@@ -129,7 +131,6 @@ func (c *OllamaClient) GenerateWordInfo(word string) (*WordInfo, error) {
   ],
   "category": "单词类别"
 }`, word)
-	fmt.Println(prompt)
 
 	// 调用 Chat 函数获取响应
 	response, err := c.Chat(prompt)

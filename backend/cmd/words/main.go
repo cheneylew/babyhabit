@@ -3,10 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
+
 	"github.com/cheneylew/babyhabit/backend/config"
 	ollama "github.com/cheneylew/babyhabit/backend/utils/ollama"
-	"log"
-	"os"
 )
 
 func main() {
@@ -21,8 +21,8 @@ func main() {
 	}
 	defer config.CloseDatabase()
 
-	// 创建 Ollama 客户端
-	ollamaClient := ollama.NewOllamaClient("http://localhost:11434", "qwen3.5:0.8b")
+	// 创建 Ollama 客户端：qwen3-coder:30b qwen3.5:9b glm-4.7-flash:q4_K_M
+	ollamaClient := ollama.NewOllamaClient("http://localhost:11434", "qwen3.5:9b")
 
 	// 获取所有没有中文意思的单词
 	words, err := getWordsWithoutChinese()
@@ -32,13 +32,54 @@ func main() {
 
 	log.Printf("Found %d words without Chinese meaning", len(words))
 
-	// 逐个处理单词
+	// 乘风破浪
+	words = []string{"乘风破浪",
+		"披荆斩棘",
+		"扬帆起航",
+		"前程似锦",
+		"步步高升",
+		"蒸蒸日上",
+		"大展宏图",
+		"一往无前",
+		"不负韶华",
+		"未来可期",
+		"砥砺前行",
+		"勇攀高峰",
+		"天道酬勤",
+		"功不唐捐",
+		"行稳致远",
+		"厚积薄发",
+		"精益求精",
+		"破茧成蝶",
+		"涅槃重生",
+		"志在千里",
+		"厚积薄发",
+		"行稳致远",
+		"静水流深",
+		"大道至简",
+		"知行合一",
+		"精益求精",
+		"破局而立",
+		"顺势而为",
+		"稳中求进",
+		"志存高远",
+		"笃行不怠",
+		"久久为功",
+		"见微知著",
+		"未雨绸缪",
+		"从容不迫",
+		"言简意赅",
+		"拨云见日",
+		"水到渠成",
+		"相继往开来",
+	}
+
 	for _, word := range words {
-		log.Printf("Processing word: %s", word)
+		log.Printf("Processing word or sentence: %s", word)
 
 		// 生成单词信息
 		wordInfo, err := ollamaClient.GenerateWordInfo(word)
-		os.Exit(0)
+		continue
 		if err != nil {
 			log.Printf("Failed to generate word info for %s: %v", word, err)
 			continue
